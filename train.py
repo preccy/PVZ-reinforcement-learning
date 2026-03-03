@@ -4,10 +4,11 @@ import argparse
 import os
 from pathlib import Path
 
+import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import VecMonitor
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 
 from pvz_env import PvZEnv
 from pvz_env.utils import set_global_seed
@@ -33,6 +34,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="final model save name (without .zip); defaults to <run-name>_final",
     )
+    p.add_argument("--n-steps", type=int, default=1024, help="rollout steps per env")
+    p.add_argument("--batch-size", type=int, default=1024)
+    p.add_argument("--n-epochs", type=int, default=6)
+    p.add_argument("--gae-lambda", type=float, default=0.95)
+    p.add_argument("--gamma", type=float, default=0.99)
+    p.add_argument("--learning-rate", type=float, default=3e-4)
+    p.add_argument("--ent-coef", type=float, default=0.01)
+    p.add_argument("--clip-range", type=float, default=0.2)
+    p.add_argument("--torch-threads", type=int, default=6)
+    p.add_argument("--torch-interop", type=int, default=2)
+    p.add_argument("--device", choices=["cpu", "auto", "cuda"], default="cpu")
     return p.parse_args()
 
 
@@ -52,8 +64,38 @@ def main() -> None:
     def make_env():
         return PvZEnv(seed=args.seed, difficulty=args.difficulty)
 
-    vec_env = make_vec_env(make_env, n_envs=args.n_envs, seed=args.seed)
+    # Use subprocess vectorization with spawn so env stepping can scale across CPU cores on Windows safely.
+    vec_env = make_vec_env(
+        make_env,
+        n_envs=args.n_envs,
+        seed=args.seed,
+        vec_env_cls=SubprocVecEnv,
+        vec_env_kwargs={"start_method": "spawn"},
+    )
     vec_env = VecMonitor(vec_env)
+    print("VEC ENV TYPE:", type(vec_env))
+    print("NUM ENVS:", getattr(vec_env, "num_envs", "??"))
+
+    rollout_size = args.n_steps * args.n_envs
+    if args.batch_size > rollout_size:
+        print(
+            f"Warning: batch_size ({args.batch_size}) > n_steps*n_envs ({rollout_size}); "
+            f"clamping batch_size to {rollout_size}."
+        )
+        args.batch_size = rollout_size
+
+    torch.set_num_threads(args.torch_threads)
+    torch.set_num_interop_threads(args.torch_interop)
+
+    print(
+        "TRAIN CONFIG:",
+        f"n_envs={args.n_envs}",
+        f"n_steps={args.n_steps}",
+        f"batch_size={args.batch_size}",
+        f"n_epochs={args.n_epochs}",
+        f"torch_threads={args.torch_threads}",
+        f"device={args.device}",
+    )
 
     run_dir = Path("logs") / args.run_name
     model_dir = Path("models")
@@ -61,7 +103,7 @@ def main() -> None:
     model_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint_cb = CheckpointCallback(
-        save_freq=max(5_000 // args.n_envs, 1),
+        save_freq=max(50_000 // args.n_envs, 1),
         save_path=str(model_dir / args.run_name),
         name_prefix="ppo_ckpt",
     )
@@ -72,7 +114,7 @@ def main() -> None:
             args.load_model,
             env=vec_env,
             tensorboard_log=str(run_dir),
-            device="auto",
+            device=args.device,
         )
     else:
         print("Starting fresh PPO training")
@@ -81,15 +123,16 @@ def main() -> None:
             vec_env,
             verbose=1,
             tensorboard_log=str(run_dir),
-            learning_rate=3e-4,
-            n_steps=256,
-            batch_size=512,
-            n_epochs=6,
-            gamma=0.99,
-            gae_lambda=0.95,
-            clip_range=0.2,
-            ent_coef=0.01,
+            learning_rate=args.learning_rate,
+            n_steps=args.n_steps,
+            batch_size=args.batch_size,
+            n_epochs=args.n_epochs,
+            gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+            clip_range=args.clip_range,
+            ent_coef=args.ent_coef,
             seed=args.seed,
+            device=args.device,
         )
 
     print(f"Training for {args.timesteps} timesteps on difficulty={args.difficulty} with {args.n_envs} envs")
