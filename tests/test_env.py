@@ -5,7 +5,7 @@ import pytest
 
 from pvz_env import PvZEnv
 from pvz_env import config
-from pvz_env.sim import Zombie
+from pvz_env.sim import LooseSun, Zombie
 
 
 def test_reset_step_shapes_and_dtype():
@@ -113,25 +113,33 @@ def test_reward_config_has_empty_collect_penalty():
     assert "invalid_action" in info
 
 
-def test_successful_econ_placement_beats_noop_reward():
-    econ_action = 2  # econ_lane_0
 
-    econ_env = PvZEnv(seed=41)
-    econ_env.reset(seed=41)
-    econ_env.sim.state.sun = max(econ_env.sim.state.sun, config.PLANTS["sunflower"].cost)
-    econ_env.sim.state.cooldowns["sunflower"] = 0
-    before_plants = len(econ_env.sim.snapshot()["plants"])
+def test_collect_reward_not_dominant_with_default_config():
+    env = PvZEnv(seed=51)
+    env.reset(seed=51)
+    env.sim.loose_sun = [LooseSun(lane=0, x=1.0, amount=100, ttl=10)]
 
-    _, econ_reward, _, _, econ_info = econ_env.step(econ_action)
-    after_plants = len(econ_info["snapshot"]["plants"])
+    _, reward, _, _, info = env.step(1)
 
-    noop_env = PvZEnv(seed=41)
-    noop_env.reset(seed=41)
-    noop_env.sim.state.sun = max(noop_env.sim.state.sun, config.PLANTS["sunflower"].cost)
-    noop_env.sim.state.cooldowns["sunflower"] = 0
-    _, noop_reward, _, _, _ = noop_env.step(0)
+    collect_only_gain = reward - config.REWARDS.step_survival
+    assert info["sun_collected"] == 100
+    assert collect_only_gain <= 0.2
+
+
+def test_econ_action_can_yield_positive_reward_with_placement_bonus():
+    env = PvZEnv(seed=52)
+    env.reset(seed=52)
+    env.sim.zombies.clear()
+    env.sim.loose_sun.clear()
+    env.sim.state.sun = max(env.sim.state.sun, config.PLANTS["sunflower"].cost)
+    env.sim.state.cooldowns["sunflower"] = 0
+    before_plants = len(env.sim.snapshot()["plants"])
+
+    _, reward, _, _, info = env.step(2)
+    after_plants = len(info["snapshot"]["plants"])
 
     assert after_plants == before_plants + 1
-    assert econ_info["placed"] is True
-    assert econ_info["placed_kind"] == "sunflower"
-    assert econ_reward > noop_reward
+    assert info["placed"] is True
+    assert info["placed_kind"] == "sunflower"
+    assert reward > 0.0
+    assert reward >= config.REWARDS.step_survival + config.REWARDS.place_any_bonus + config.REWARDS.place_sunflower_bonus

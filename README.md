@@ -83,6 +83,9 @@ python train.py --timesteps 400000 --n-envs 8 --difficulty normal --run-name ppo
 # evaluate trained model
 python eval.py --policy ppo --model models/ppo_pvz_final.zip --episodes 10
 
+# evaluate with stochastic action sampling (diagnostics)
+python eval.py --policy ppo --model models/ppo_pvz_final.zip --episodes 10 --stochastic
+
 # compare random baseline
 python eval.py --policy random --episodes 10
 
@@ -91,6 +94,9 @@ python eval.py --policy scripted --episodes 10
 
 # replay one episode with pygame
 python replay.py --policy ppo --model models/ppo_pvz_final.zip
+
+# replay with stochastic sampling
+python replay.py --policy ppo --model models/ppo_pvz_final.zip --stochastic
 ```
 
 
@@ -136,8 +142,9 @@ Centralized in `pvz_env/config.py`:
 
 - +step survival reward
 - +kill bonus
-- +sun collection bonus
-- +placement bonuses (any placement, sunflower economy, defender placement) to prevent degenerate collect-only policies
+- +placement bonuses (any placement, sunflower economy, defender placement) so planting is discoverable
+- +optional capped sun collection bonus (`sun_collect_bonus`, default `0.0`) to avoid collect-only reward farming
+- -sun hoarding penalty above a threshold to discourage sitting on unspent economy
 - -invalid action penalty
 - -mower consumed penalty
 - -large loss penalty
@@ -147,11 +154,13 @@ Tune these coefficients to trade off econ greed vs safety.
 
 
 Key anti-degeneracy knobs in `RewardConfig`:
+- `sun_collect_bonus` + `sun_collect_cap`: optional capped collect reward (default bonus is zero)
 - `empty_collect_penalty`: penalty for collect with no loose sun
 - `tiny_collect_threshold` + `tiny_collect_penalty`: penalty for collecting very small amounts
 - `place_any_bonus`: reward for any successful placement
 - `place_sunflower_bonus`: extra reward for sunflower economy placement
 - `place_defender_bonus`: extra reward for peashooter/wallnut placement
+- `sun_hoard_threshold` + `sun_hoard_penalty`: small per-step penalty for hoarding too much sun
 
 
 ## Training details
@@ -175,6 +184,7 @@ tensorboard --logdir logs
 - `--policy random`
 - `--policy scripted`
 - optional `--render` text step trace
+- optional `--stochastic` action sampling for PPO diagnosis
 
 Use this to verify RL > random and compare against a simple heuristic baseline.
 

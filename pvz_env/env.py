@@ -71,8 +71,12 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         sim_out = self.sim.step()
         if action == 1:
             step_info.sun_collected = collected
-            reward += collected * config.REWARDS.sun_collect_bonus
+            collected_reward = min(collected, config.REWARDS.sun_collect_cap) * config.REWARDS.sun_collect_bonus
+            reward += collected_reward
             sim_out["sun_collected"] = collected
+
+        excess_sun = max(0.0, self.sim.state.sun - config.REWARDS.sun_hoard_threshold)
+        reward += excess_sun * config.REWARDS.sun_hoard_penalty
 
         reward += sim_out["kills"] * config.REWARDS.kill_bonus
         reward += sim_out["mower_used"] * config.REWARDS.mower_consumed_penalty

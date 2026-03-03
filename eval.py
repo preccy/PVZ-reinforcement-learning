@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--difficulty", choices=["easy", "normal", "hard"], default="normal")
     p.add_argument("--policy", choices=["ppo", "random", "scripted"], default="ppo")
     p.add_argument("--render", action="store_true", help="print step-by-step text output")
+    p.add_argument("--stochastic", action="store_true", help="sample PPO actions instead of deterministic mode")
     return p.parse_args()
 
 
@@ -45,7 +46,7 @@ def main() -> None:
         ep_len = 0
         while not done:
             if args.policy == "ppo":
-                action, _ = model.predict(obs, deterministic=True)
+                action, _ = model.predict(obs, deterministic=not args.stochastic)
             elif args.policy == "random":
                 action = env.action_space.sample()
             else:
