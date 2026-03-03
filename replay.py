@@ -150,6 +150,8 @@ def draw(
     tile_w: int,
     tile_h: int,
     sprites: dict[str, Optional[pygame.Surface]],
+    mask_sum: Optional[int] = None,
+    collect_legal: Optional[bool] = None,
 ) -> None:
     screen.fill(COLORS["bg"])
     for lane in range(config.LANES):
@@ -195,6 +197,10 @@ def draw(
             f"plants: {len(snapshot['plants'])}",
             f"zombies: {len(snapshot['zombies'])}",
         ]
+        if mask_sum is not None:
+            lines.append(f"mask_sum: {mask_sum}")
+        if collect_legal is not None:
+            lines.append(f"collect_legal: {collect_legal}")
         if done:
             status = "WIN" if snapshot.get("win") else "LOSS"
             lines.append(f"result: {status}")
@@ -254,10 +260,19 @@ def main() -> None:
     first_frame_printed = False
 
     while not done and info["snapshot"]["step"] < args.max_steps:
+        mask_sum = None
+        collect_legal = None
         handle_quit_events()
 
         if args.policy == "ppo":
-            action, _ = model.predict(obs, deterministic=not args.stochastic)
+            if args.algo == "maskable":
+                base_env = env.unwrapped
+                masks = base_env.get_action_mask()
+                mask_sum = int(masks.sum())
+                collect_legal = bool(masks[1])
+                action, _ = model.predict(obs, deterministic=not args.stochastic, action_masks=masks)
+            else:
+                action, _ = model.predict(obs, deterministic=not args.stochastic)
             action = int(action)
         elif args.policy == "random":
             action = env.action_space.sample()
@@ -268,7 +283,18 @@ def main() -> None:
         done = term or trunc
         last_action = action
 
-        draw(screen, font, info["snapshot"], last_action, done, tile_w, tile_h, sprites)
+        draw(
+            screen,
+            font,
+            info["snapshot"],
+            last_action,
+            done,
+            tile_w,
+            tile_h,
+            sprites,
+            mask_sum=mask_sum,
+            collect_legal=collect_legal,
+        )
         pygame.display.flip()
 
         if not first_frame_printed:

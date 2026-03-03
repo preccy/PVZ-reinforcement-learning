@@ -187,6 +187,7 @@ def test_action_mask_only_noop_when_no_sun_and_no_loose_sun():
 
     assert bool(mask[0]) is True
     assert bool(mask[1]) is False
+    assert not mask[2:].any()
     assert int(mask.sum()) == 1
 
 
