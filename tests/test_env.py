@@ -77,3 +77,27 @@ def test_termination_signals_for_loss_and_win_paths():
     assert term is True
     assert trunc is False
     assert info["snapshot"]["win"] is True
+
+
+def test_empty_collect_is_invalid_and_worse_than_noop():
+    steps = 8
+
+    collect_env = PvZEnv(seed=21)
+    collect_env.reset(seed=21)
+    saw_invalid = False
+    collect_total = 0.0
+    for _ in range(steps):
+        _, reward, _, _, info = collect_env.step(1)
+        collect_total += reward
+        if len(info["snapshot"]["loose_sun"]) == 0 and info["invalid_action"]:
+            saw_invalid = True
+
+    noop_env = PvZEnv(seed=21)
+    noop_env.reset(seed=21)
+    noop_total = 0.0
+    for _ in range(steps):
+        _, reward, _, _, _ = noop_env.step(0)
+        noop_total += reward
+
+    assert saw_invalid
+    assert collect_total < noop_total

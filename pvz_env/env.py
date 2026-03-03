@@ -15,6 +15,7 @@ from .sim import PvZSimulator
 class StepInfo:
     invalid_action: bool = False
     action_name: str = "noop"
+    sun_collected: int = 0
 
 
 class PvZEnv(gym.Env[np.ndarray, int]):
@@ -43,13 +44,22 @@ class PvZEnv(gym.Env[np.ndarray, int]):
             raise ValueError(f"Invalid action index {action}")
 
         step_info = self._apply_high_level_action(action)
+        collected = 0
+        if action == 1:
+            if len(self.sim.loose_sun) == 0:
+                step_info.invalid_action = True
+            else:
+                collected = self.sim.collect_sun()
+
         reward = config.REWARDS.step_survival
         if step_info.invalid_action:
             reward += config.REWARDS.invalid_action_penalty
+        if action == 1 and collected == 0:
+            reward += config.REWARDS.empty_collect_penalty
 
         sim_out = self.sim.step()
         if action == 1:
-            collected = self.sim.collect_sun()
+            step_info.sun_collected = collected
             reward += collected * config.REWARDS.sun_collect_bonus
             sim_out["sun_collected"] = collected
 
@@ -152,6 +162,7 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         return {
             "action_name": step_info.action_name,
             "invalid_action": step_info.invalid_action,
+            "sun_collected": step_info.sun_collected,
             "snapshot": self.sim.snapshot(),
         }
 

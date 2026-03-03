@@ -28,6 +28,7 @@ class RewardConfig:
     kill_bonus: float = 0.7
     sun_collect_bonus: float = 0.04
     invalid_action_penalty: float = -0.15
+    empty_collect_penalty: float = -0.02
     mower_consumed_penalty: float = -2.0
     lose_penalty: float = -10.0
     win_bonus: float = 10.0
