@@ -26,7 +26,7 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         self.sim = PvZSimulator(self.rng, difficulty=difficulty)
         self.difficulty = difficulty
         self.action_space = spaces.Discrete(len(config.ACTION_MEANINGS))
-        obs_size = 1 + 3 + 3 + 3 + 3 + 9 + 3 + 1 + 1
+        obs_size = 1 + 3 + (7 * config.LANES) + 1 + 1 + 1
         self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(obs_size,), dtype=np.float32)
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict[str, Any]] = None):
@@ -68,7 +68,7 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         snap = self.sim.snapshot()
         return (
             f"step={snap['step']} sun={snap['sun']} zombies={len(snap['zombies'])} "
-            f"plants={len(snap['plants'])} mowers={snap['mowers']}"
+            f"plants={len(snap['plants'])} mowers={snap['mowers']} wave={snap['wave_completion']:.2f}"
         )
 
     def _apply_high_level_action(self, action: int) -> StepInfo:
@@ -77,21 +77,21 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         if action in (0, 1):
             return info
 
-        lane = (action - 2) % config.LANES
+        lane = int(name.rsplit("_", 1)[-1])
         if name.startswith("econ"):
             placed = self._try_place_lane("sunflower", lane, preferred_cols=[1, 0, 2])
             info.invalid_action = not placed
         elif name.startswith("defend"):
-            placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1])
+            placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
             info.invalid_action = not placed
         elif name.startswith("panic"):
             danger = self._lane_danger(lane)
             if danger > 0.6:
-                placed = self._try_place_lane("wallnut", lane, preferred_cols=[4, 3, 5, 2])
+                placed = self._try_place_lane("wallnut", lane, preferred_cols=[4, 3, 5, 2, 6])
                 if not placed:
-                    placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1])
+                    placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
             else:
-                placed = self._try_place_lane("peashooter", lane, preferred_cols=[3, 2, 1])
+                placed = self._try_place_lane("peashooter", lane, preferred_cols=[3, 2, 1, 4])
             info.invalid_action = not placed
         return info
 
@@ -103,24 +103,30 @@ class PvZEnv(gym.Env[np.ndarray, int]):
 
     def _build_obs(self) -> np.ndarray:
         sun_norm = min(1.0, self.sim.state.sun / config.MAX_SUN)
-        cooldowns = [self.sim.state.cooldowns[k] / max(1, config.PLANTS[k].cooldown) for k in ("sunflower", "peashooter", "wallnut")]
-        threats = [self._lane_danger(l) for l in range(config.LANES)]
-        nearest = [self._nearest_zombie_dist(l) for l in range(config.LANES)]
-        counts = [self._lane_zombie_count(l) for l in range(config.LANES)]
-        plant_counts = []
+        cooldowns = [
+            self.sim.state.cooldowns[k] / max(1, config.PLANTS[k].cooldown)
+            for k in ("sunflower", "peashooter", "wallnut")
+        ]
+
+        lane_features = []
         for lane in range(config.LANES):
             lane_plants = [p for p in self.sim.grid[lane] if p]
-            plant_counts.extend(
+            lane_features.extend(
                 [
+                    self._lane_zombie_count(lane),
+                    self._nearest_zombie_dist(lane),
+                    self._lane_danger(lane),
                     min(1.0, sum(1 for p in lane_plants if p.kind == "sunflower") / config.COLS),
                     min(1.0, sum(1 for p in lane_plants if p.kind == "peashooter") / config.COLS),
                     min(1.0, sum(1 for p in lane_plants if p.kind == "wallnut") / config.COLS),
+                    1.0 if self.sim.state.mowers[lane] else 0.0,
                 ]
             )
-        mowers = [1.0 if m else 0.0 for m in self.sim.state.mowers]
+
         loose_sun = min(1.0, len(self.sim.loose_sun) / config.MAX_LOOSE_SUN)
         time_prog = min(1.0, self.sim.state.step_idx / config.EPISODE_STEPS)
-        obs = np.array([sun_norm, *cooldowns, *threats, *nearest, *counts, *plant_counts, *mowers, loose_sun, time_prog], dtype=np.float32)
+        wave_prog = float(np.clip(self.sim.wave_completion_ratio, 0.0, 1.0))
+        obs = np.array([sun_norm, *cooldowns, *lane_features, loose_sun, time_prog, wave_prog], dtype=np.float32)
         return obs
 
     def _lane_danger(self, lane: int) -> float:
@@ -140,7 +146,7 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         return float(np.clip(nearest.x / config.COLS, 0.0, 1.0))
 
     def _lane_zombie_count(self, lane: int) -> float:
-        return min(1.0, sum(1 for z in self.sim.zombies if z.lane == lane) / 6.0)
+        return min(1.0, sum(1 for z in self.sim.zombies if z.lane == lane) / 8.0)
 
     def _build_info(self, step_info: StepInfo) -> dict[str, Any]:
         return {
@@ -153,14 +159,23 @@ class PvZEnv(gym.Env[np.ndarray, int]):
 class ScriptedBaselinePolicy:
     def predict(self, obs: np.ndarray) -> int:
         sun = obs[0]
-        threats = obs[4:7]
-        if obs[19] > 0.25:
+        lane_start = 4
+        lane_block = 7
+        threat_offsets = [lane_start + lane * lane_block + 2 for lane in range(config.LANES)]
+        zombie_count_offsets = [lane_start + lane * lane_block for lane in range(config.LANES)]
+
+        if obs[-3] > 0.25:
             return 1
+
+        threats = np.array([obs[idx] for idx in threat_offsets], dtype=np.float32)
         max_lane = int(np.argmax(threats))
         if threats[max_lane] > 0.55:
-            return 8 + max_lane
+            return 2 + (2 * config.LANES) + max_lane
+
         if sun > 0.25:
-            defend_lane = int(np.argmax(obs[7:10] < 0.5))
-            return 5 + defend_lane
-        econ_lane = int(np.argmin(obs[10:13]))
+            zombie_counts = np.array([obs[idx] for idx in zombie_count_offsets], dtype=np.float32)
+            defend_lane = int(np.argmin(zombie_counts))
+            return 2 + config.LANES + defend_lane
+
+        econ_lane = int(np.argmin(threats))
         return 2 + econ_lane

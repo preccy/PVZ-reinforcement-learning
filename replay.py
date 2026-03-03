@@ -7,10 +7,11 @@ import pygame
 from stable_baselines3 import PPO
 
 from pvz_env import ACTION_MEANINGS, PvZEnv, ScriptedBaselinePolicy
+from pvz_env import config
 
-WIDTH, HEIGHT = 960, 420
+WIDTH, HEIGHT = 1280, 760
 CELL_W, CELL_H = 120, 120
-MARGIN_X, MARGIN_Y = 80, 30
+MARGIN_X, MARGIN_Y = 80, 40
 
 
 COLORS = {
@@ -81,8 +82,8 @@ def main() -> None:
 
 def draw(screen: pygame.Surface, font: pygame.font.Font, snapshot: dict, action: int, ep_reward: float) -> None:
     screen.fill(COLORS["bg"])
-    for lane in range(3):
-        for col in range(6):
+    for lane in range(config.LANES):
+        for col in range(config.COLS):
             x = MARGIN_X + col * CELL_W
             y = MARGIN_Y + lane * CELL_H
             pygame.draw.rect(screen, COLORS["grid"], pygame.Rect(x, y, CELL_W - 2, CELL_H - 2), 2)

@@ -10,7 +10,7 @@ Training directly on a real game is brittle (screen scraping, latency, nondeterm
 
 ## Features
 
-- 3-lane x 6-column PvZ-like simulator
+- 5-lane x 9-column PvZ-like simulator
 - Plants: Sunflower, Peashooter, Wall-nut
 - Zombies: Normal + Conehead
 - Sun economy, cooldowns, sky sun, sunflower sun
@@ -77,8 +77,8 @@ python -m pip install -r requirements.txt
 # smoke training (~50k steps)
 python train.py --quick --timesteps 50000 --n-envs 4 --run-name quick_test
 
-# full-ish first run
-python train.py --timesteps 300000 --n-envs 8 --run-name ppo_pvz
+# recommended fresh run on CPU
+python train.py --timesteps 400000 --n-envs 8 --difficulty normal --run-name ppo_pvz_5x9
 
 # evaluate trained model
 python eval.py --policy ppo --model models/ppo_pvz_final.zip --episodes 10
@@ -93,27 +93,40 @@ python eval.py --policy scripted --episodes 10
 python replay.py --policy ppo --model models/ppo_pvz_final.zip
 ```
 
+
+## Compatibility note
+
+The environment now uses a **5x9 board**, **17 actions**, and **42-dim observations**.
+Older saved models from the 3x6 version are not compatible and should be retrained from scratch.
+
+## Wave scheduling (high-level)
+
+Zombie spawning is now driven by a simple timeline:
+- trickle spawns happen throughout the episode
+- flag-wave spikes occur at 25%, 50%, 75%, and 100% progress
+- a final-wave spike happens near the end
+- conehead share ramps up over time based on difficulty
+
+Win condition remains surviving `EPISODE_STEPS`; wave completion is tracked in `info["snapshot"]` for debugging.
+
 ## Observation space (fixed, normalized float32)
 
-Observation length: **27**
+Observation length: **42**
 
 - sun (1)
 - plant cooldowns sunflower/peashooter/wallnut (3)
-- lane danger summaries (3)
-- nearest zombie distance per lane (3)
-- zombie count per lane (3)
-- per-lane plant counts [sunflower, peashooter, wallnut] x 3 lanes (9)
-- mower flags per lane (3)
+- per lane (5 lanes): zombie_count, nearest_zombie_distance, threat_score, sunflower_count, peashooter_count, wallnut_count, mower_available (35 total)
 - loose sun count (1)
 - time progress (1)
+- wave completion progress (1)
 
-## Action space (Discrete 11)
+## Action space (Discrete 17)
 
 0. noop
 1. collect_sun
-2-4. econ lane 0/1/2 (sunflower intent)
-5-7. defend lane 0/1/2 (peashooter intent)
-8-10. panic lane 0/1/2 (wall-nut or fallback defense)
+2-6. econ lane 0..4 (sunflower intent)
+7-11. defend lane 0..4 (peashooter intent)
+12-16. panic lane 0..4 (wall-nut or fallback defense)
 
 The env translates these intents into legal placements with fallback tile selection. PPO still learns *when and where* to use each intent.
 
@@ -167,9 +180,9 @@ Use this to verify RL > random and compare against a simple heuristic baseline.
 ## Curriculum option
 
 Use difficulty levels:
-- `easy`: lower zombie spawn pressure
+- `easy`: lower trickle rate and gentler conehead ramp
 - `normal`: default
-- `hard`: higher pressure, less free economy tempo
+- `hard`: higher trickle rate, larger wave multipliers, faster conehead ramp
 
 Examples:
 ```bash
@@ -203,8 +216,8 @@ Coverage includes reset/step, observation shape/dtype, invalid action handling, 
 
 1. Increase kill bonus and reduce invalid penalty to encourage aggression.
 2. Add action variants for explicit lane+plant combinations.
-3. Extend wave schedule (progressive spawn ramps instead of fixed probabilities).
-4. Expand board to 5 lanes and add new zombie classes.
+3. Add more wave archetypes and scripted mixed-lane pushes.
+4. Expand with new plant and zombie classes.
 5. Train curriculum: easy -> normal -> hard model transfer.
 6. Compare PPO hyperparameters (`n_steps`, `ent_coef`, `gamma`) using short sweeps.
 
