@@ -19,6 +19,7 @@ class Plant:
 
 @dataclass
 class Zombie:
+    id: int
     kind: str
     lane: int
     x: float
@@ -64,6 +65,7 @@ class PvZSimulator:
         self.final_wave_step = int(config.EPISODE_STEPS * 0.94)
         self.wave_completion_step: Optional[int] = None
         self.wave_completion_ratio = 0.0
+        self._next_zombie_id = 1
 
     def reset(self) -> None:
         self.state = SimState()
@@ -79,6 +81,7 @@ class PvZSimulator:
         )
         self.wave_completion_step = None
         self.wave_completion_ratio = 0.0
+        self._next_zombie_id = 1
 
     def can_place(self, kind: str, lane: int, col: int) -> bool:
         if self.done:
@@ -117,13 +120,14 @@ class PvZSimulator:
                 "won": self.win,
                 "wave_completion": self.wave_completion_ratio,
                 "final_wave_step": self.final_wave_step,
+                "events": [],
             }
 
         self.state.step_idx += 1
         for k in self.state.cooldowns:
             self.state.cooldowns[k] = max(0, self.state.cooldowns[k] - 1)
 
-        kills = self._plants_attack()
+        kills, events = self._plants_attack()
         self._spawn_sky_sun()
         self._spawn_zombies()
         mower_used = self._zombie_behaviour()
@@ -148,6 +152,7 @@ class PvZSimulator:
             "won": self.win,
             "wave_completion": self.wave_completion_ratio,
             "final_wave_step": self.final_wave_step,
+            "events": events,
         }
 
     def _build_wave_schedule(self) -> dict[int, SpawnEvent]:
@@ -179,6 +184,23 @@ class PvZSimulator:
                 x = float(self.rng.uniform(0, config.COLS - 1))
                 self.loose_sun.append(LooseSun(lane=lane, x=x, amount=self.wave_cfg.sky_sun_amount, ttl=55))
 
+    def _spawn_zombie(self, kind: str, lane: int, x: float) -> None:
+        zcfg = config.ZOMBIES[kind]
+        self.zombies.append(Zombie(id=self._next_zombie_id, kind=kind, lane=lane, x=x, hp=zcfg.hp))
+        self._next_zombie_id += 1
+
+    def _pick_zombie_kind(self, progress: float) -> str:
+        cone_ratio = float(np.clip(0.10 + self.wave_cfg.conehead_ramp * progress, 0.0, 0.80))
+        # Buckethead ramps from 0 in early game to configured cap; normal stays most common early.
+        bucket_ratio = float(np.clip((progress - 0.33) * 1.5 * self.wave_cfg.buckethead_ramp, 0.0, 0.45))
+
+        roll = float(self.rng.random())
+        if roll < bucket_ratio:
+            return "buckethead"
+        if roll < bucket_ratio + cone_ratio:
+            return "conehead"
+        return "normal"
+
     def _spawn_zombies(self) -> None:
         schedule_event = self.wave_schedule.get(self.state.step_idx)
         progress = min(1.0, self.state.step_idx / config.EPISODE_STEPS)
@@ -186,25 +208,21 @@ class PvZSimulator:
 
         base_rate = self.wave_cfg.base_trickle_rate
         lane_spawn_prob = min(0.95, base_rate * active_multiplier * (0.65 + 0.5 * progress))
-        cone_ratio = float(np.clip(0.10 + self.wave_cfg.conehead_ramp * progress, 0.0, 0.85))
 
         for lane in range(config.LANES):
             if self.rng.random() >= lane_spawn_prob:
                 continue
-            kind = "conehead" if self.rng.random() < cone_ratio else "normal"
-            zcfg = config.ZOMBIES[kind]
-            self.zombies.append(Zombie(kind=kind, lane=lane, x=config.COLS + 0.8, hp=zcfg.hp))
+            self._spawn_zombie(kind=self._pick_zombie_kind(progress), lane=lane, x=config.COLS + 0.8)
 
         if schedule_event and schedule_event.is_flag_wave:
             burst = max(1, int(round(active_multiplier)))
             for _ in range(burst):
                 lane = int(self.rng.integers(0, config.LANES))
-                kind = "conehead" if self.rng.random() < cone_ratio else "normal"
-                zcfg = config.ZOMBIES[kind]
-                self.zombies.append(Zombie(kind=kind, lane=lane, x=config.COLS + 0.8, hp=zcfg.hp))
+                self._spawn_zombie(kind=self._pick_zombie_kind(progress), lane=lane, x=config.COLS + 0.8)
 
-    def _plants_attack(self) -> int:
+    def _plants_attack(self) -> tuple[int, list[dict]]:
         kills = 0
+        events: list[dict] = []
         for lane in range(config.LANES):
             lane_zombies = [z for z in self.zombies if z.lane == lane]
             if not lane_zombies:
@@ -219,13 +237,22 @@ class PvZSimulator:
                 if plant.cooldown_tick >= pcfg.attack_interval and nearest.x >= col:
                     nearest.hp -= pcfg.attack_damage
                     plant.cooldown_tick = 0
+                    events.append(
+                        {
+                            "type": "pea_shot",
+                            "lane": lane,
+                            "x0": float(col + 0.5),
+                            "x1": float(nearest.x),
+                            "target_id": nearest.id,
+                        }
+                    )
             dead = [z for z in lane_zombies if z.hp <= 0]
             for z in dead:
                 kills += 1
                 if len(self.loose_sun) < config.MAX_LOOSE_SUN and self.rng.random() < 0.5:
                     self.loose_sun.append(LooseSun(lane=z.lane, x=max(0.0, z.x), amount=25, ttl=45))
                 self.zombies.remove(z)
-        return kills
+        return kills, events
 
     def _zombie_behaviour(self) -> int:
         mower_used = 0
@@ -303,7 +330,7 @@ class PvZSimulator:
                 for p in lane
                 if p is not None
             ],
-            "zombies": [{"kind": z.kind, "lane": z.lane, "x": z.x, "hp": z.hp} for z in self.zombies],
+            "zombies": [{"id": z.id, "kind": z.kind, "lane": z.lane, "x": z.x, "hp": z.hp} for z in self.zombies],
             "loose_sun": [{"lane": s.lane, "x": s.x, "amount": s.amount, "ttl": s.ttl} for s in self.loose_sun],
             "sunflowers_total": int(sum(lane_sunflower_counts)),
             "sunflowers_per_lane": lane_sunflower_counts,

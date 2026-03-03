@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import gymnasium as gym
@@ -18,6 +18,7 @@ class StepInfo:
     sun_collected: int = 0
     placed: bool = False
     placed_kind: Optional[str] = None
+    events: list[dict[str, Any]] = field(default_factory=list)
 
 
 class PvZEnv(gym.Env[np.ndarray, int]):
@@ -74,6 +75,7 @@ class PvZEnv(gym.Env[np.ndarray, int]):
                 reward += config.REWARDS.place_defender_bonus
 
         sim_out = self.sim.step()
+        step_info.events = list(sim_out.get("events", []))
         if action == 1:
             step_info.sun_collected = collected
             collected_reward = min(collected, config.REWARDS.sun_collect_cap) * config.REWARDS.sun_collect_bonus
@@ -224,6 +226,7 @@ class PvZEnv(gym.Env[np.ndarray, int]):
             "sun": self.sim.state.sun,
             "loose_sun_count": len(self.sim.loose_sun),
             "cooldowns": dict(self.sim.state.cooldowns),
+            "events": step_info.events,
             "snapshot": self.sim.snapshot(),
         }
 
