@@ -228,6 +228,11 @@ Use this to verify RL > random and compare against a simple heuristic baseline.
 
 ## Replay / visualization
 
+For MaskablePPO checkpoints, replay with:
+```bash
+python replay.py --algo maskable --policy ppo --model models/xxx.zip
+```
+
 `replay.py` uses pygame and draws:
 - grid lanes and columns
 - plant circles by type
