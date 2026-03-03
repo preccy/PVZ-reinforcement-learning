@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+import numpy as np
+
+from . import config
+
+
+@dataclass
+class Plant:
+    kind: str
+    lane: int
+    col: int
+    hp: float
+    cooldown_tick: int = 0
+
+
+@dataclass
+class Zombie:
+    kind: str
+    lane: int
+    x: float
+    hp: float
+
+
+@dataclass
+class LooseSun:
+    lane: int
+    x: float
+    amount: int
+    ttl: int
+
+
+@dataclass
+class SimState:
+    step_idx: int = 0
+    sun: int = config.INITIAL_SUN
+    cooldowns: Dict[str, int] = field(default_factory=lambda: {k: 0 for k in config.PLANTS.keys()})
+    mowers: List[bool] = field(default_factory=lambda: [True] * config.LANES)
+
+
+class PvZSimulator:
+    def __init__(self, rng: np.random.Generator, difficulty: str = "normal"):
+        self.rng = rng
+        self.difficulty = difficulty
+        self.wave_cfg = config.WAVES[difficulty]
+        self.state = SimState()
+        self.grid: List[List[Optional[Plant]]] = [[None for _ in range(config.COLS)] for _ in range(config.LANES)]
+        self.zombies: List[Zombie] = []
+        self.loose_sun: List[LooseSun] = []
+        self.done = False
+        self.win = False
+
+    def reset(self) -> None:
+        self.state = SimState()
+        self.grid = [[None for _ in range(config.COLS)] for _ in range(config.LANES)]
+        self.zombies = []
+        self.loose_sun = []
+        self.done = False
+        self.win = False
+
+    def place(self, kind: str, lane: int, col: int) -> bool:
+        if self.done:
+            return False
+        if kind not in config.PLANTS or lane < 0 or lane >= config.LANES or col < 0 or col >= config.COLS:
+            return False
+        cfg = config.PLANTS[kind]
+        if self.state.cooldowns[kind] > 0 or self.state.sun < cfg.cost:
+            return False
+        if self.grid[lane][col] is not None:
+            return False
+        self.state.sun -= cfg.cost
+        self.state.cooldowns[kind] = cfg.cooldown
+        self.grid[lane][col] = Plant(kind=kind, lane=lane, col=col, hp=cfg.hp)
+        return True
+
+    def collect_sun(self) -> int:
+        total = sum(s.amount for s in self.loose_sun)
+        self.state.sun = int(min(config.MAX_SUN, self.state.sun + total))
+        self.loose_sun.clear()
+        return total
+
+    def step(self) -> dict:
+        if self.done:
+            return {"kills": 0, "mower_used": 0, "sun_collected": 0, "lost": False, "won": self.win}
+
+        self.state.step_idx += 1
+        for k in self.state.cooldowns:
+            self.state.cooldowns[k] = max(0, self.state.cooldowns[k] - 1)
+
+        kills = self._plants_attack()
+        self._spawn_sky_sun()
+        self._spawn_zombies()
+        mower_used = self._zombie_behaviour()
+        self._sunflower_production()
+        self._tick_loose_sun()
+
+        lost = False
+        if any(z.x <= config.HOUSE_X and not self.state.mowers[z.lane] for z in self.zombies):
+            self.done = True
+            lost = True
+
+        if self.state.step_idx >= config.EPISODE_STEPS and not self.done:
+            self.done = True
+            self.win = True
+
+        return {
+            "kills": kills,
+            "mower_used": mower_used,
+            "sun_collected": 0,
+            "lost": lost,
+            "won": self.win,
+        }
+
+    def _spawn_sky_sun(self) -> None:
+        if self.state.step_idx % self.wave_cfg.sky_sun_interval == 0:
+            if len(self.loose_sun) < config.MAX_LOOSE_SUN:
+                lane = int(self.rng.integers(0, config.LANES))
+                x = float(self.rng.uniform(0, config.COLS - 1))
+                self.loose_sun.append(LooseSun(lane=lane, x=x, amount=self.wave_cfg.sky_sun_amount, ttl=55))
+
+    def _spawn_zombies(self) -> None:
+        for lane in range(config.LANES):
+            r = self.rng.random()
+            kind = None
+            if r < self.wave_cfg.spawn_prob_cone:
+                kind = "conehead"
+            elif r < self.wave_cfg.spawn_prob_cone + self.wave_cfg.spawn_prob_normal:
+                kind = "normal"
+            if kind:
+                zcfg = config.ZOMBIES[kind]
+                self.zombies.append(Zombie(kind=kind, lane=lane, x=config.COLS + 0.8, hp=zcfg.hp))
+
+    def _plants_attack(self) -> int:
+        kills = 0
+        for lane in range(config.LANES):
+            lane_zombies = [z for z in self.zombies if z.lane == lane]
+            if not lane_zombies:
+                continue
+            nearest = min(lane_zombies, key=lambda z: z.x)
+            for col in range(config.COLS):
+                plant = self.grid[lane][col]
+                if not plant or plant.kind != "peashooter":
+                    continue
+                plant.cooldown_tick += 1
+                pcfg = config.PLANTS[plant.kind]
+                if plant.cooldown_tick >= pcfg.attack_interval and nearest.x >= col:
+                    nearest.hp -= pcfg.attack_damage
+                    plant.cooldown_tick = 0
+            dead = [z for z in lane_zombies if z.hp <= 0]
+            for z in dead:
+                kills += 1
+                if len(self.loose_sun) < config.MAX_LOOSE_SUN and self.rng.random() < 0.5:
+                    self.loose_sun.append(LooseSun(lane=z.lane, x=max(0.0, z.x), amount=25, ttl=45))
+                self.zombies.remove(z)
+        return kills
+
+    def _zombie_behaviour(self) -> int:
+        mower_used = 0
+        for z in list(self.zombies):
+            plant_target = None
+            plant_col = None
+            for col in range(config.COLS):
+                plant = self.grid[z.lane][col]
+                if plant and z.x <= col + 0.25:
+                    plant_target = plant
+                    plant_col = col
+                    break
+            if plant_target is not None:
+                zcfg = config.ZOMBIES[z.kind]
+                plant_target.hp -= zcfg.dps * 0.1
+                if plant_target.hp <= 0 and plant_col is not None:
+                    self.grid[z.lane][plant_col] = None
+            else:
+                zcfg = config.ZOMBIES[z.kind]
+                z.x -= zcfg.speed
+
+            if z.x <= 0 and self.state.mowers[z.lane]:
+                self.state.mowers[z.lane] = False
+                mower_used += 1
+                for other in list(self.zombies):
+                    if other.lane == z.lane and other.x <= config.COLS + 1.2:
+                        self.zombies.remove(other)
+        return mower_used
+
+    def _sunflower_production(self) -> None:
+        for lane in range(config.LANES):
+            for col in range(config.COLS):
+                plant = self.grid[lane][col]
+                if not plant or plant.kind != "sunflower":
+                    continue
+                plant.cooldown_tick += 1
+                pcfg = config.PLANTS[plant.kind]
+                if plant.cooldown_tick >= pcfg.sun_interval:
+                    if len(self.loose_sun) < config.MAX_LOOSE_SUN:
+                        self.loose_sun.append(LooseSun(lane=lane, x=col, amount=pcfg.sun_amount, ttl=60))
+                    plant.cooldown_tick = 0
+
+    def _tick_loose_sun(self) -> None:
+        for s in self.loose_sun:
+            s.ttl -= 1
+        self.loose_sun = [s for s in self.loose_sun if s.ttl > 0]
+
+    def snapshot(self) -> dict:
+        return {
+            "step": self.state.step_idx,
+            "sun": self.state.sun,
+            "cooldowns": dict(self.state.cooldowns),
+            "mowers": list(self.state.mowers),
+            "plants": [
+                {"kind": p.kind, "lane": p.lane, "col": p.col, "hp": p.hp}
+                for lane in self.grid
+                for p in lane
+                if p is not None
+            ],
+            "zombies": [{"kind": z.kind, "lane": z.lane, "x": z.x, "hp": z.hp} for z in self.zombies],
+            "loose_sun": [{"lane": s.lane, "x": s.x, "amount": s.amount, "ttl": s.ttl} for s in self.loose_sun],
+            "done": self.done,
+            "win": self.win,
+        }
