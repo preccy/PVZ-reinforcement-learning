@@ -137,12 +137,22 @@ Centralized in `pvz_env/config.py`:
 - +step survival reward
 - +kill bonus
 - +sun collection bonus
+- +placement bonuses (any placement, sunflower economy, defender placement) to prevent degenerate collect-only policies
 - -invalid action penalty
 - -mower consumed penalty
 - -large loss penalty
 - +win bonus
 
 Tune these coefficients to trade off econ greed vs safety.
+
+
+Key anti-degeneracy knobs in `RewardConfig`:
+- `empty_collect_penalty`: penalty for collect with no loose sun
+- `tiny_collect_threshold` + `tiny_collect_penalty`: penalty for collecting very small amounts
+- `place_any_bonus`: reward for any successful placement
+- `place_sunflower_bonus`: extra reward for sunflower economy placement
+- `place_defender_bonus`: extra reward for peashooter/wallnut placement
+
 
 ## Training details
 

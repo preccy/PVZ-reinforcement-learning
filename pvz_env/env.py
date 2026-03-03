@@ -16,6 +16,8 @@ class StepInfo:
     invalid_action: bool = False
     action_name: str = "noop"
     sun_collected: int = 0
+    placed: bool = False
+    placed_kind: Optional[str] = None
 
 
 class PvZEnv(gym.Env[np.ndarray, int]):
@@ -56,6 +58,15 @@ class PvZEnv(gym.Env[np.ndarray, int]):
             reward += config.REWARDS.invalid_action_penalty
         if action == 1 and collected == 0:
             reward += config.REWARDS.empty_collect_penalty
+        if action == 1 and 0 < collected < config.REWARDS.tiny_collect_threshold:
+            reward += config.REWARDS.tiny_collect_penalty
+
+        if step_info.placed:
+            reward += config.REWARDS.place_any_bonus
+            if step_info.placed_kind == "sunflower":
+                reward += config.REWARDS.place_sunflower_bonus
+            if step_info.placed_kind in ("peashooter", "wallnut"):
+                reward += config.REWARDS.place_defender_bonus
 
         sim_out = self.sim.step()
         if action == 1:
@@ -91,18 +102,32 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         if name.startswith("econ"):
             placed = self._try_place_lane("sunflower", lane, preferred_cols=[1, 0, 2])
             info.invalid_action = not placed
+            info.placed = placed
+            info.placed_kind = "sunflower" if placed else None
         elif name.startswith("defend"):
             placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
             info.invalid_action = not placed
+            info.placed = placed
+            info.placed_kind = "peashooter" if placed else None
         elif name.startswith("panic"):
             danger = self._lane_danger(lane)
+            placed_kind: Optional[str] = None
+            placed = False
             if danger > 0.6:
                 placed = self._try_place_lane("wallnut", lane, preferred_cols=[4, 3, 5, 2, 6])
-                if not placed:
+                if placed:
+                    placed_kind = "wallnut"
+                else:
                     placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
+                    if placed:
+                        placed_kind = "peashooter"
             else:
                 placed = self._try_place_lane("peashooter", lane, preferred_cols=[3, 2, 1, 4])
+                if placed:
+                    placed_kind = "peashooter"
             info.invalid_action = not placed
+            info.placed = placed
+            info.placed_kind = placed_kind
         return info
 
     def _try_place_lane(self, kind: str, lane: int, preferred_cols: list[int]) -> bool:
@@ -163,6 +188,8 @@ class PvZEnv(gym.Env[np.ndarray, int]):
             "action_name": step_info.action_name,
             "invalid_action": step_info.invalid_action,
             "sun_collected": step_info.sun_collected,
+            "placed": step_info.placed,
+            "placed_kind": step_info.placed_kind,
             "snapshot": self.sim.snapshot(),
         }
 

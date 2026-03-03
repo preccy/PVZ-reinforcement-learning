@@ -282,6 +282,10 @@ class PvZSimulator:
             self.wave_completion_ratio = float(np.clip(progress, 0.0, 0.99))
 
     def snapshot(self) -> dict:
+        lane_sunflower_counts = [
+            sum(1 for plant in self.grid[lane] if plant is not None and plant.kind == "sunflower")
+            for lane in range(config.LANES)
+        ]
         return {
             "step": self.state.step_idx,
             "sun": self.state.sun,
@@ -295,6 +299,8 @@ class PvZSimulator:
             ],
             "zombies": [{"kind": z.kind, "lane": z.lane, "x": z.x, "hp": z.hp} for z in self.zombies],
             "loose_sun": [{"lane": s.lane, "x": s.x, "amount": s.amount, "ttl": s.ttl} for s in self.loose_sun],
+            "sunflowers_total": int(sum(lane_sunflower_counts)),
+            "sunflowers_per_lane": lane_sunflower_counts,
             "wave_completion": self.wave_completion_ratio,
             "final_wave_step": self.final_wave_step,
             "done": self.done,

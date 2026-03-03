@@ -114,7 +114,8 @@ def draw(
     text = (
         f"Step={snapshot['step']}  Sun={snapshot['sun']}  Action={ACTION_MEANINGS[action]}  "
         f"Reward={ep_reward:.2f}  Mowers={snapshot['mowers']}  "
-        f"LooseSun={len(snapshot['loose_sun'])}  LastCollected={last_collected}"
+        f"LooseSun={len(snapshot['loose_sun'])}  Sunflowers={snapshot.get('sunflowers_total', 0)}  "
+        f"LastCollected={last_collected}"
     )
     screen.blit(font.render(text, True, COLORS["text"]), (20, HEIGHT - 40))
 
