@@ -21,6 +21,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--difficulty", choices=["easy", "normal", "hard"], default="normal")
     p.add_argument("--run-name", type=str, default="ppo_pvz")
     p.add_argument("--quick", action="store_true", help="quick smoke training (50k timesteps)")
+    p.add_argument("--load-model", type=Path, default=None, help="path to existing model .zip to resume from")
+    p.add_argument(
+        "--reset-timesteps",
+        action="store_true",
+        help="reset SB3 timestep counter when calling learn() while resuming",
+    )
+    p.add_argument(
+        "--save-name",
+        type=str,
+        default=None,
+        help="final model save name (without .zip); defaults to <run-name>_final",
+    )
     return p.parse_args()
 
 
@@ -28,6 +40,12 @@ def main() -> None:
     args = parse_args()
     if args.quick:
         args.timesteps = min(args.timesteps, 50_000)
+
+    if args.load_model is not None and not args.load_model.exists():
+        raise FileNotFoundError(
+            f"Load model path does not exist: {args.load_model}. "
+            "Provide a valid .zip created by Stable-Baselines3."
+        )
 
     set_global_seed(args.seed)
 
@@ -42,28 +60,51 @@ def main() -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    checkpoint_cb = CheckpointCallback(save_freq=max(5_000 // args.n_envs, 1), save_path=str(model_dir / args.run_name), name_prefix="ppo_ckpt")
-
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        verbose=1,
-        tensorboard_log=str(run_dir),
-        learning_rate=3e-4,
-        n_steps=256,
-        batch_size=512,
-        n_epochs=6,
-        gamma=0.99,
-        gae_lambda=0.95,
-        clip_range=0.2,
-        ent_coef=0.01,
-        seed=args.seed,
+    checkpoint_cb = CheckpointCallback(
+        save_freq=max(5_000 // args.n_envs, 1),
+        save_path=str(model_dir / args.run_name),
+        name_prefix="ppo_ckpt",
     )
 
-    print(f"Training for {args.timesteps} timesteps on difficulty={args.difficulty} with {args.n_envs} envs")
-    model.learn(total_timesteps=args.timesteps, callback=checkpoint_cb, progress_bar=True)
+    if args.load_model is not None:
+        print(f"Resuming PPO training from {args.load_model}")
+        model = PPO.load(
+            args.load_model,
+            env=vec_env,
+            tensorboard_log=str(run_dir),
+            device="auto",
+        )
+    else:
+        print("Starting fresh PPO training")
+        model = PPO(
+            "MlpPolicy",
+            vec_env,
+            verbose=1,
+            tensorboard_log=str(run_dir),
+            learning_rate=3e-4,
+            n_steps=256,
+            batch_size=512,
+            n_epochs=6,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_range=0.2,
+            ent_coef=0.01,
+            seed=args.seed,
+        )
 
-    final_path = model_dir / f"{args.run_name}_final"
+    print(f"Training for {args.timesteps} timesteps on difficulty={args.difficulty} with {args.n_envs} envs")
+    if args.load_model is not None:
+        model.learn(
+            total_timesteps=args.timesteps,
+            callback=checkpoint_cb,
+            progress_bar=True,
+            reset_num_timesteps=args.reset_timesteps,
+        )
+    else:
+        model.learn(total_timesteps=args.timesteps, callback=checkpoint_cb, progress_bar=True)
+
+    final_name = args.save_name or f"{args.run_name}_final"
+    final_path = model_dir / final_name
     model.save(final_path)
     print(f"Saved final model to {final_path}.zip")
     vec_env.close()

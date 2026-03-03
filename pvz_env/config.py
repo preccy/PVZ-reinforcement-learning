@@ -24,12 +24,12 @@ class ZombieConfig:
 
 @dataclass(frozen=True)
 class RewardConfig:
-    step_survival: float = 0.05
-    kill_bonus: float = 0.5
-    sun_collect_bonus: float = 0.02
-    invalid_action_penalty: float = -0.08
-    mower_consumed_penalty: float = -1.5
-    lose_penalty: float = -8.0
+    step_survival: float = 0.03
+    kill_bonus: float = 0.7
+    sun_collect_bonus: float = 0.04
+    invalid_action_penalty: float = -0.15
+    mower_consumed_penalty: float = -2.0
+    lose_penalty: float = -10.0
     win_bonus: float = 10.0
 
 
