@@ -101,3 +101,37 @@ def test_empty_collect_is_invalid_and_worse_than_noop():
 
     assert saw_invalid
     assert collect_total < noop_total
+
+
+def test_reward_config_has_empty_collect_penalty():
+    assert hasattr(config.REWARDS, "empty_collect_penalty")
+
+    env = PvZEnv(seed=31)
+    env.reset(seed=31)
+    _, reward, _, _, info = env.step(1)
+    assert isinstance(reward, float)
+    assert "invalid_action" in info
+
+
+def test_successful_econ_placement_beats_noop_reward():
+    econ_action = 2  # econ_lane_0
+
+    econ_env = PvZEnv(seed=41)
+    econ_env.reset(seed=41)
+    econ_env.sim.state.sun = max(econ_env.sim.state.sun, config.PLANTS["sunflower"].cost)
+    econ_env.sim.state.cooldowns["sunflower"] = 0
+    before_plants = len(econ_env.sim.snapshot()["plants"])
+
+    _, econ_reward, _, _, econ_info = econ_env.step(econ_action)
+    after_plants = len(econ_info["snapshot"]["plants"])
+
+    noop_env = PvZEnv(seed=41)
+    noop_env.reset(seed=41)
+    noop_env.sim.state.sun = max(noop_env.sim.state.sun, config.PLANTS["sunflower"].cost)
+    noop_env.sim.state.cooldowns["sunflower"] = 0
+    _, noop_reward, _, _, _ = noop_env.step(0)
+
+    assert after_plants == before_plants + 1
+    assert econ_info["placed"] is True
+    assert econ_info["placed_kind"] == "sunflower"
+    assert econ_reward > noop_reward
