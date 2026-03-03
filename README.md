@@ -80,8 +80,14 @@ python train.py --quick --timesteps 50000 --n-envs 4 --run-name quick_test
 # recommended fresh run on CPU
 python train.py --timesteps 400000 --n-envs 8 --difficulty normal --run-name ppo_pvz_5x9
 
+# recommended masked run (MaskablePPO + invalid action masking)
+python train.py --timesteps 400000 --n-envs 8 --difficulty normal --run-name maskable_pvz_5x9 --masking
+
 # evaluate trained model
 python eval.py --policy ppo --model models/ppo_pvz_final.zip --episodes 10
+
+# evaluate a masked model
+python eval.py --policy ppo --algo maskable --model models/maskable_pvz_5x9_final.zip --episodes 10
 
 # evaluate with stochastic action sampling (diagnostics)
 python eval.py --policy ppo --model models/ppo_pvz_final.zip --episodes 10 --stochastic
@@ -94,6 +100,9 @@ python eval.py --policy scripted --episodes 10
 
 # replay one episode with pygame
 python replay.py --policy ppo --model models/ppo_pvz_final.zip
+
+# replay a maskable model
+python replay.py --policy ppo --algo maskable --model models/maskable_pvz_5x9_final.zip
 
 # replay with stochastic sampling
 python replay.py --policy ppo --model models/ppo_pvz_final.zip --stochastic
@@ -162,6 +171,29 @@ Key anti-degeneracy knobs in `RewardConfig`:
 - `place_defender_bonus`: extra reward for peashooter/wallnut placement
 - `sun_hoard_threshold` + `sun_hoard_penalty`: small per-step penalty for hoarding too much sun
 
+
+
+## Action masking
+
+This repo supports invalid action masking via **sb3-contrib MaskablePPO**.
+
+Why it helps:
+- invalid actions are removed *before sampling*, so the agent does not waste updates on actions that cannot succeed
+- training becomes more sample-efficient because exploration is focused on executable actions
+- deterministic replay/eval becomes more reliable because argmax is taken over valid actions only
+
+Enable masking in training:
+```bash
+python train.py --masking --timesteps 400000 --n-envs 8 --difficulty normal --run-name maskable_pvz_5x9
+```
+
+Evaluate/replay masked models:
+```bash
+python eval.py --policy ppo --algo maskable --model models/maskable_pvz_5x9_final.zip --episodes 10
+python replay.py --policy ppo --algo maskable --model models/maskable_pvz_5x9_final.zip
+```
+
+`--stochastic` remains supported for both PPO and MaskablePPO; for masked models it samples from the masked action distribution.
 
 ## Training details
 

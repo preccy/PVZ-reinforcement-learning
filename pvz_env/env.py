@@ -96,6 +96,22 @@ class PvZEnv(gym.Env[np.ndarray, int]):
             f"plants={len(snap['plants'])} mowers={snap['mowers']} wave={snap['wave_completion']:.2f}"
         )
 
+    def get_action_mask(self) -> np.ndarray:
+        mask = np.zeros(self.action_space.n, dtype=bool)
+        mask[0] = True
+        mask[1] = len(self.sim.loose_sun) > 0
+
+        for lane in range(config.LANES):
+            econ_action = 2 + lane
+            defend_action = 2 + config.LANES + lane
+            panic_action = 2 + (2 * config.LANES) + lane
+
+            mask[econ_action] = self._can_place_lane("sunflower", lane, preferred_cols=[1, 0, 2])
+            mask[defend_action] = self._can_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
+            mask[panic_action] = self._can_place_panic_lane(lane)
+
+        return mask
+
     def _apply_high_level_action(self, action: int) -> StepInfo:
         name = config.ACTION_MEANINGS[action]
         info = StepInfo(action_name=name)
@@ -139,6 +155,20 @@ class PvZEnv(gym.Env[np.ndarray, int]):
             if self.sim.place(kind, lane, col):
                 return True
         return False
+
+    def _can_place_lane(self, kind: str, lane: int, preferred_cols: list[int]) -> bool:
+        for col in preferred_cols:
+            if self.sim.can_place(kind, lane, col):
+                return True
+        return False
+
+    def _can_place_panic_lane(self, lane: int) -> bool:
+        danger = self._lane_danger(lane)
+        if danger > 0.6:
+            return self._can_place_lane("wallnut", lane, preferred_cols=[4, 3, 5, 2, 6]) or self._can_place_lane(
+                "peashooter", lane, preferred_cols=[2, 3, 1, 4]
+            )
+        return self._can_place_lane("peashooter", lane, preferred_cols=[3, 2, 1, 4])
 
     def _build_obs(self) -> np.ndarray:
         sun_norm = min(1.0, self.sim.state.sun / config.MAX_SUN)

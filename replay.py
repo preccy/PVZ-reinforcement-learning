@@ -5,9 +5,15 @@ import sys
 
 import pygame
 from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
 
 from pvz_env import ACTION_MEANINGS, PvZEnv, ScriptedBaselinePolicy
 from pvz_env import config
+
+
+def action_mask_fn(env: PvZEnv):
+    return env.get_action_mask()
 
 WIDTH, HEIGHT = 1280, 760
 CELL_W, CELL_H = 120, 120
@@ -31,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Pygame replay of one episode")
     p.add_argument("--model", type=str, default="models/ppo_pvz_final.zip")
     p.add_argument("--policy", choices=["ppo", "random", "scripted"], default="ppo")
+    p.add_argument("--algo", choices=["ppo", "maskable"], default="ppo")
     p.add_argument("--difficulty", choices=["easy", "normal", "hard"], default="normal")
     p.add_argument("--seed", type=int, default=123)
     p.add_argument("--fps", type=int, default=12)
@@ -41,9 +48,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     env = PvZEnv(seed=args.seed, difficulty=args.difficulty)
+    if args.algo == "maskable":
+        env = ActionMasker(env, action_mask_fn)
     obs, info = env.reset(seed=args.seed)
 
-    model = PPO.load(args.model) if args.policy == "ppo" else None
+    if args.policy == "ppo":
+        model = MaskablePPO.load(args.model) if args.algo == "maskable" else PPO.load(args.model)
+    else:
+        model = None
     scripted = ScriptedBaselinePolicy() if args.policy == "scripted" else None
 
     pygame.init()

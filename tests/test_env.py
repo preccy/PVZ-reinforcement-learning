@@ -143,3 +143,33 @@ def test_econ_action_can_yield_positive_reward_with_placement_bonus():
     assert info["placed_kind"] == "sunflower"
     assert reward > 0.0
     assert reward >= config.REWARDS.step_survival + config.REWARDS.place_any_bonus + config.REWARDS.place_sunflower_bonus
+
+
+def test_action_mask_shape_dtype_and_basic_semantics():
+    env = PvZEnv(seed=61)
+    env.reset(seed=61)
+
+    mask = env.get_action_mask()
+
+    assert mask.dtype == bool
+    assert mask.shape == (env.action_space.n,)
+    assert bool(mask[0]) is True
+    assert bool(mask[1]) == (len(env.sim.loose_sun) > 0)
+
+
+def test_action_mask_disables_all_place_actions_when_unaffordable_or_on_cooldown():
+    env = PvZEnv(seed=62)
+    env.reset(seed=62)
+
+    env.sim.state.sun = 0
+    env.sim.state.cooldowns["sunflower"] = 5
+    env.sim.state.cooldowns["peashooter"] = 5
+    env.sim.state.cooldowns["wallnut"] = 5
+
+    mask = env.get_action_mask()
+
+    place_start = 2
+    place_end = 2 + (3 * config.LANES)
+    assert not mask[place_start:place_end].any()
+    assert bool(mask[0]) is True
+    assert bool(mask[1]) == (len(env.sim.loose_sun) > 0)
