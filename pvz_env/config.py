@@ -37,12 +37,14 @@ class RewardConfig:
 class WaveConfig:
     sky_sun_interval: int
     sky_sun_amount: int
-    spawn_prob_normal: float
-    spawn_prob_cone: float
+    base_trickle_rate: float
+    flag_wave_multiplier: float
+    final_wave_multiplier: float
+    conehead_ramp: float
 
 
-LANES = 3
-COLS = 6
+LANES = 5
+COLS = 9
 HOUSE_X = -0.2
 INITIAL_SUN = 150
 MAX_SUN = 500
@@ -61,9 +63,30 @@ ZOMBIES = {
 }
 
 WAVES = {
-    "easy": WaveConfig(sky_sun_interval=18, sky_sun_amount=25, spawn_prob_normal=0.07, spawn_prob_cone=0.015),
-    "normal": WaveConfig(sky_sun_interval=20, sky_sun_amount=25, spawn_prob_normal=0.085, spawn_prob_cone=0.025),
-    "hard": WaveConfig(sky_sun_interval=23, sky_sun_amount=25, spawn_prob_normal=0.10, spawn_prob_cone=0.04),
+    "easy": WaveConfig(
+        sky_sun_interval=18,
+        sky_sun_amount=25,
+        base_trickle_rate=0.10,
+        flag_wave_multiplier=2.0,
+        final_wave_multiplier=3.0,
+        conehead_ramp=0.20,
+    ),
+    "normal": WaveConfig(
+        sky_sun_interval=20,
+        sky_sun_amount=25,
+        base_trickle_rate=0.13,
+        flag_wave_multiplier=2.3,
+        final_wave_multiplier=3.3,
+        conehead_ramp=0.30,
+    ),
+    "hard": WaveConfig(
+        sky_sun_interval=23,
+        sky_sun_amount=25,
+        base_trickle_rate=0.16,
+        flag_wave_multiplier=2.7,
+        final_wave_multiplier=3.8,
+        conehead_ramp=0.42,
+    ),
 }
 
 REWARDS = RewardConfig()
@@ -74,10 +97,16 @@ ACTION_MEANINGS = [
     "econ_lane_0",
     "econ_lane_1",
     "econ_lane_2",
+    "econ_lane_3",
+    "econ_lane_4",
     "defend_lane_0",
     "defend_lane_1",
     "defend_lane_2",
+    "defend_lane_3",
+    "defend_lane_4",
     "panic_lane_0",
     "panic_lane_1",
     "panic_lane_2",
+    "panic_lane_3",
+    "panic_lane_4",
 ]

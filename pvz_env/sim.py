@@ -34,6 +34,14 @@ class LooseSun:
 
 
 @dataclass
+class SpawnEvent:
+    step: int
+    multiplier: float
+    is_flag_wave: bool = False
+    is_final_wave: bool = False
+
+
+@dataclass
 class SimState:
     step_idx: int = 0
     sun: int = config.INITIAL_SUN
@@ -52,6 +60,10 @@ class PvZSimulator:
         self.loose_sun: List[LooseSun] = []
         self.done = False
         self.win = False
+        self.wave_schedule: dict[int, SpawnEvent] = {}
+        self.final_wave_step = int(config.EPISODE_STEPS * 0.94)
+        self.wave_completion_step: Optional[int] = None
+        self.wave_completion_ratio = 0.0
 
     def reset(self) -> None:
         self.state = SimState()
@@ -60,6 +72,13 @@ class PvZSimulator:
         self.loose_sun = []
         self.done = False
         self.win = False
+        self.wave_schedule = self._build_wave_schedule()
+        self.final_wave_step = max(
+            self.final_wave_step,
+            max((s for s, event in self.wave_schedule.items() if event.is_final_wave), default=self.final_wave_step),
+        )
+        self.wave_completion_step = None
+        self.wave_completion_ratio = 0.0
 
     def place(self, kind: str, lane: int, col: int) -> bool:
         if self.done:
@@ -84,7 +103,15 @@ class PvZSimulator:
 
     def step(self) -> dict:
         if self.done:
-            return {"kills": 0, "mower_used": 0, "sun_collected": 0, "lost": False, "won": self.win}
+            return {
+                "kills": 0,
+                "mower_used": 0,
+                "sun_collected": 0,
+                "lost": False,
+                "won": self.win,
+                "wave_completion": self.wave_completion_ratio,
+                "final_wave_step": self.final_wave_step,
+            }
 
         self.state.step_idx += 1
         for k in self.state.cooldowns:
@@ -96,6 +123,7 @@ class PvZSimulator:
         mower_used = self._zombie_behaviour()
         self._sunflower_production()
         self._tick_loose_sun()
+        self._update_wave_completion()
 
         lost = False
         if any(z.x <= config.HOUSE_X and not self.state.mowers[z.lane] for z in self.zombies):
@@ -112,7 +140,31 @@ class PvZSimulator:
             "sun_collected": 0,
             "lost": lost,
             "won": self.win,
+            "wave_completion": self.wave_completion_ratio,
+            "final_wave_step": self.final_wave_step,
         }
+
+    def _build_wave_schedule(self) -> dict[int, SpawnEvent]:
+        schedule: dict[int, SpawnEvent] = {}
+        spacing = 28
+        trickle_start = 12
+        for step in range(trickle_start, config.EPISODE_STEPS + 1, spacing):
+            progress = min(1.0, step / config.EPISODE_STEPS)
+            schedule[step] = SpawnEvent(step=step, multiplier=1.0 + 0.7 * progress)
+
+        for ratio in (0.25, 0.50, 0.75, 1.00):
+            step = max(1, min(config.EPISODE_STEPS, int(round(config.EPISODE_STEPS * ratio))))
+            schedule[step] = SpawnEvent(step=step, multiplier=self.wave_cfg.flag_wave_multiplier, is_flag_wave=True)
+
+        final_step = max(1, int(config.EPISODE_STEPS * 0.94))
+        schedule[final_step] = SpawnEvent(
+            step=final_step,
+            multiplier=self.wave_cfg.final_wave_multiplier,
+            is_flag_wave=True,
+            is_final_wave=True,
+        )
+        self.final_wave_step = final_step
+        return schedule
 
     def _spawn_sky_sun(self) -> None:
         if self.state.step_idx % self.wave_cfg.sky_sun_interval == 0:
@@ -122,14 +174,26 @@ class PvZSimulator:
                 self.loose_sun.append(LooseSun(lane=lane, x=x, amount=self.wave_cfg.sky_sun_amount, ttl=55))
 
     def _spawn_zombies(self) -> None:
+        schedule_event = self.wave_schedule.get(self.state.step_idx)
+        progress = min(1.0, self.state.step_idx / config.EPISODE_STEPS)
+        active_multiplier = schedule_event.multiplier if schedule_event else 1.0
+
+        base_rate = self.wave_cfg.base_trickle_rate
+        lane_spawn_prob = min(0.95, base_rate * active_multiplier * (0.65 + 0.5 * progress))
+        cone_ratio = float(np.clip(0.10 + self.wave_cfg.conehead_ramp * progress, 0.0, 0.85))
+
         for lane in range(config.LANES):
-            r = self.rng.random()
-            kind = None
-            if r < self.wave_cfg.spawn_prob_cone:
-                kind = "conehead"
-            elif r < self.wave_cfg.spawn_prob_cone + self.wave_cfg.spawn_prob_normal:
-                kind = "normal"
-            if kind:
+            if self.rng.random() >= lane_spawn_prob:
+                continue
+            kind = "conehead" if self.rng.random() < cone_ratio else "normal"
+            zcfg = config.ZOMBIES[kind]
+            self.zombies.append(Zombie(kind=kind, lane=lane, x=config.COLS + 0.8, hp=zcfg.hp))
+
+        if schedule_event and schedule_event.is_flag_wave:
+            burst = max(1, int(round(active_multiplier)))
+            for _ in range(burst):
+                lane = int(self.rng.integers(0, config.LANES))
+                kind = "conehead" if self.rng.random() < cone_ratio else "normal"
                 zcfg = config.ZOMBIES[kind]
                 self.zombies.append(Zombie(kind=kind, lane=lane, x=config.COLS + 0.8, hp=zcfg.hp))
 
@@ -203,6 +267,20 @@ class PvZSimulator:
             s.ttl -= 1
         self.loose_sun = [s for s in self.loose_sun if s.ttl > 0]
 
+    def _update_wave_completion(self) -> None:
+        if self.wave_completion_step is not None:
+            self.wave_completion_ratio = 1.0
+            return
+        if self.state.step_idx >= self.final_wave_step and len(self.zombies) == 0:
+            self.wave_completion_step = self.state.step_idx
+            self.wave_completion_ratio = 1.0
+        elif self.state.step_idx < self.final_wave_step:
+            self.wave_completion_ratio = 0.0
+        else:
+            span = max(1, config.EPISODE_STEPS - self.final_wave_step)
+            progress = (self.state.step_idx - self.final_wave_step) / span
+            self.wave_completion_ratio = float(np.clip(progress, 0.0, 0.99))
+
     def snapshot(self) -> dict:
         return {
             "step": self.state.step_idx,
@@ -217,6 +295,8 @@ class PvZSimulator:
             ],
             "zombies": [{"kind": z.kind, "lane": z.lane, "x": z.x, "hp": z.hp} for z in self.zombies],
             "loose_sun": [{"lane": s.lane, "x": s.x, "amount": s.amount, "ttl": s.ttl} for s in self.loose_sun],
+            "wave_completion": self.wave_completion_ratio,
+            "final_wave_step": self.final_wave_step,
             "done": self.done,
             "win": self.win,
         }
