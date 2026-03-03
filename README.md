@@ -106,6 +106,12 @@ python replay.py --policy ppo --algo maskable --model models/maskable_pvz_5x9_fi
 
 # replay with stochastic sampling
 python replay.py --policy ppo --model models/ppo_pvz_final.zip --stochastic
+
+# replay with shape-only fallback (ignore PNG assets)
+python replay.py --policy ppo --no-sprites
+
+# replay speed/length controls
+python replay.py --policy ppo --fps 30 --max-steps 600
 ```
 
 
@@ -228,6 +234,32 @@ Use this to verify RL > random and compare against a simple heuristic baseline.
 - zombies moving right->left
 - loose sun orbs
 - HUD: step, sun, action name, reward, mower flags
+
+### Sprites
+
+You can optionally drop your own PNGs under:
+
+```text
+assets/
+  plants/
+    sunflower.png
+    peashooter.png
+    wallnut.png
+  zombies/
+    zombie.png
+    cone_zombie.png
+  ui/
+    sun.png   (optional)
+```
+
+Sprite behavior in replay:
+- if a PNG exists, replay uses it
+- if it is missing or fails to load, replay falls back to built-in shape rendering for that entity only
+- plant sprites are scaled to roughly 90% of tile width/height
+- zombie sprites are scaled by height to roughly 95% of tile height while preserving aspect ratio
+- `sun.png` is optional; missing file falls back to a yellow circle
+- `--sprite-scale` multiplies these default target sizes
+- `--no-sprites` disables PNG loading entirely and forces fallback shapes
 
 ## Curriculum option
 
