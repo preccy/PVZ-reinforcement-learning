@@ -6,12 +6,18 @@ from pathlib import Path
 
 import torch
 from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 
 from pvz_env import PvZEnv
 from pvz_env.utils import set_global_seed
+
+
+def action_mask_fn(env: PvZEnv):
+    return env.get_action_mask()
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--torch-threads", type=int, default=6)
     p.add_argument("--torch-interop", type=int, default=2)
     p.add_argument("--device", choices=["cpu", "auto", "cuda"], default="cpu")
+    p.add_argument("--masking", action="store_true", help="enable invalid action masking with MaskablePPO")
     return p.parse_args()
 
 
@@ -62,7 +69,10 @@ def main() -> None:
     set_global_seed(args.seed)
 
     def make_env():
-        return PvZEnv(seed=args.seed, difficulty=args.difficulty)
+        env = PvZEnv(seed=args.seed, difficulty=args.difficulty)
+        if args.masking:
+            env = ActionMasker(env, action_mask_fn)
+        return env
 
     # Use subprocess vectorization with spawn so env stepping can scale across CPU cores on Windows safely.
     vec_env = make_vec_env(
@@ -87,8 +97,11 @@ def main() -> None:
     torch.set_num_threads(args.torch_threads)
     torch.set_num_interop_threads(args.torch_interop)
 
+    algo_name = "MaskablePPO" if args.masking else "PPO"
+
     print(
         "TRAIN CONFIG:",
+        f"algo={algo_name}",
         f"n_envs={args.n_envs}",
         f"n_steps={args.n_steps}",
         f"batch_size={args.batch_size}",
@@ -108,17 +121,19 @@ def main() -> None:
         name_prefix="ppo_ckpt",
     )
 
+    algo_cls = MaskablePPO if args.masking else PPO
+
     if args.load_model is not None:
-        print(f"Resuming PPO training from {args.load_model}")
-        model = PPO.load(
+        print(f"Resuming {algo_name} training from {args.load_model}")
+        model = algo_cls.load(
             args.load_model,
             env=vec_env,
             tensorboard_log=str(run_dir),
             device=args.device,
         )
     else:
-        print("Starting fresh PPO training")
-        model = PPO(
+        print(f"Starting fresh {algo_name} training")
+        model = algo_cls(
             "MlpPolicy",
             vec_env,
             verbose=1,
@@ -135,7 +150,9 @@ def main() -> None:
             device=args.device,
         )
 
-    print(f"Training for {args.timesteps} timesteps on difficulty={args.difficulty} with {args.n_envs} envs")
+    print(
+        f"Training for {args.timesteps} timesteps on difficulty={args.difficulty} with {args.n_envs} envs using {algo_name}"
+    )
     if args.load_model is not None:
         model.learn(
             total_timesteps=args.timesteps,

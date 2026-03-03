@@ -80,7 +80,7 @@ class PvZSimulator:
         self.wave_completion_step = None
         self.wave_completion_ratio = 0.0
 
-    def place(self, kind: str, lane: int, col: int) -> bool:
+    def can_place(self, kind: str, lane: int, col: int) -> bool:
         if self.done:
             return False
         if kind not in config.PLANTS or lane < 0 or lane >= config.LANES or col < 0 or col >= config.COLS:
@@ -90,6 +90,12 @@ class PvZSimulator:
             return False
         if self.grid[lane][col] is not None:
             return False
+        return True
+
+    def place(self, kind: str, lane: int, col: int) -> bool:
+        if not self.can_place(kind, lane, col):
+            return False
+        cfg = config.PLANTS[kind]
         self.state.sun -= cfg.cost
         self.state.cooldowns[kind] = cfg.cooldown
         self.grid[lane][col] = Plant(kind=kind, lane=lane, col=col, hp=cfg.hp)

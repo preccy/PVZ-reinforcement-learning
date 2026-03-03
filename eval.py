@@ -5,9 +5,15 @@ from pathlib import Path
 
 import numpy as np
 from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
 
 from pvz_env import PvZEnv, ScriptedBaselinePolicy
 from pvz_env.render import format_text_snapshot
+
+
+def action_mask_fn(env: PvZEnv):
+    return env.get_action_mask()
 
 
 def parse_args() -> argparse.Namespace:
@@ -17,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=123)
     p.add_argument("--difficulty", choices=["easy", "normal", "hard"], default="normal")
     p.add_argument("--policy", choices=["ppo", "random", "scripted"], default="ppo")
+    p.add_argument("--algo", choices=["ppo", "maskable"], default="ppo")
     p.add_argument("--render", action="store_true", help="print step-by-step text output")
     p.add_argument("--stochastic", action="store_true", help="sample PPO actions instead of deterministic mode")
     return p.parse_args()
@@ -25,6 +32,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     env = PvZEnv(seed=args.seed, difficulty=args.difficulty)
+    if args.algo == "maskable":
+        env = ActionMasker(env, action_mask_fn)
 
     model = None
     scripted = None
@@ -32,7 +41,7 @@ def main() -> None:
         model_path = Path(args.model)
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}")
-        model = PPO.load(str(model_path))
+        model = MaskablePPO.load(str(model_path)) if args.algo == "maskable" else PPO.load(str(model_path))
     elif args.policy == "scripted":
         scripted = ScriptedBaselinePolicy()
 
@@ -67,6 +76,7 @@ def main() -> None:
 
     print("-" * 60)
     print(f"Policy: {args.policy}")
+    print(f"Algo: {args.algo}")
     print(f"Average reward: {np.mean(rewards):.2f} ± {np.std(rewards):.2f}")
     print(f"Average steps: {np.mean(lengths):.1f}")
     print(f"Win rate: {wins / args.episodes:.2%}")
