@@ -23,6 +23,11 @@ class StepInfo:
 class PvZEnv(gym.Env[np.ndarray, int]):
     metadata = {"render_modes": ["human", "ansi"]}
 
+    SUNFLOWER_COLS = [1, 0, 2]
+    DEFENSE_COLS = [2, 3, 1, 4]
+    PANIC_WALLNUT_COLS = [4, 3, 5, 2, 6]
+    PANIC_PEASHOOTER_COLS = DEFENSE_COLS
+
     def __init__(self, seed: Optional[int] = None, difficulty: str = "normal"):
         super().__init__()
         self.rng = np.random.default_rng(seed)
@@ -97,18 +102,21 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         )
 
     def get_action_mask(self) -> np.ndarray:
-        mask = np.zeros(self.action_space.n, dtype=bool)
+        env = self.unwrapped
+        mask = np.zeros(env.action_space.n, dtype=bool)
         mask[0] = True
-        mask[1] = len(self.sim.loose_sun) > 0
+        mask[1] = len(env.sim.loose_sun) > 0
 
         for lane in range(config.LANES):
             econ_action = 2 + lane
             defend_action = 2 + config.LANES + lane
             panic_action = 2 + (2 * config.LANES) + lane
 
-            mask[econ_action] = self._can_place_lane("sunflower", lane, preferred_cols=[1, 0, 2])
-            mask[defend_action] = self._can_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
-            mask[panic_action] = self._can_place_panic_lane(lane)
+            mask[econ_action] = env._can_place_lane("sunflower", lane, preferred_cols=env.SUNFLOWER_COLS)
+            mask[defend_action] = env._can_place_lane("peashooter", lane, preferred_cols=env.DEFENSE_COLS)
+            mask[panic_action] = env._can_place_lane("wallnut", lane, preferred_cols=env.PANIC_WALLNUT_COLS) or env._can_place_lane(
+                "peashooter", lane, preferred_cols=env.PANIC_PEASHOOTER_COLS
+            )
 
         return mask
 
@@ -120,29 +128,22 @@ class PvZEnv(gym.Env[np.ndarray, int]):
 
         lane = int(name.rsplit("_", 1)[-1])
         if name.startswith("econ"):
-            placed = self._try_place_lane("sunflower", lane, preferred_cols=[1, 0, 2])
+            placed = self._try_place_lane("sunflower", lane, preferred_cols=self.SUNFLOWER_COLS)
             info.invalid_action = not placed
             info.placed = placed
             info.placed_kind = "sunflower" if placed else None
         elif name.startswith("defend"):
-            placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
+            placed = self._try_place_lane("peashooter", lane, preferred_cols=self.DEFENSE_COLS)
             info.invalid_action = not placed
             info.placed = placed
             info.placed_kind = "peashooter" if placed else None
         elif name.startswith("panic"):
-            danger = self._lane_danger(lane)
             placed_kind: Optional[str] = None
-            placed = False
-            if danger > 0.6:
-                placed = self._try_place_lane("wallnut", lane, preferred_cols=[4, 3, 5, 2, 6])
-                if placed:
-                    placed_kind = "wallnut"
-                else:
-                    placed = self._try_place_lane("peashooter", lane, preferred_cols=[2, 3, 1, 4])
-                    if placed:
-                        placed_kind = "peashooter"
+            placed = self._try_place_lane("wallnut", lane, preferred_cols=self.PANIC_WALLNUT_COLS)
+            if placed:
+                placed_kind = "wallnut"
             else:
-                placed = self._try_place_lane("peashooter", lane, preferred_cols=[3, 2, 1, 4])
+                placed = self._try_place_lane("peashooter", lane, preferred_cols=self.PANIC_PEASHOOTER_COLS)
                 if placed:
                     placed_kind = "peashooter"
             info.invalid_action = not placed
@@ -161,14 +162,6 @@ class PvZEnv(gym.Env[np.ndarray, int]):
             if self.sim.can_place(kind, lane, col):
                 return True
         return False
-
-    def _can_place_panic_lane(self, lane: int) -> bool:
-        danger = self._lane_danger(lane)
-        if danger > 0.6:
-            return self._can_place_lane("wallnut", lane, preferred_cols=[4, 3, 5, 2, 6]) or self._can_place_lane(
-                "peashooter", lane, preferred_cols=[2, 3, 1, 4]
-            )
-        return self._can_place_lane("peashooter", lane, preferred_cols=[3, 2, 1, 4])
 
     def _build_obs(self) -> np.ndarray:
         sun_norm = min(1.0, self.sim.state.sun / config.MAX_SUN)
@@ -218,12 +211,19 @@ class PvZEnv(gym.Env[np.ndarray, int]):
         return min(1.0, sum(1 for z in self.sim.zombies if z.lane == lane) / 8.0)
 
     def _build_info(self, step_info: StepInfo) -> dict[str, Any]:
+        mask = self.get_action_mask()
+        legal_actions = [config.ACTION_MEANINGS[idx] for idx, is_legal in enumerate(mask) if is_legal]
         return {
             "action_name": step_info.action_name,
             "invalid_action": step_info.invalid_action,
             "sun_collected": step_info.sun_collected,
             "placed": step_info.placed,
             "placed_kind": step_info.placed_kind,
+            "mask_sum": int(mask.sum()),
+            "legal_actions_preview": legal_actions[:10],
+            "sun": self.sim.state.sun,
+            "loose_sun_count": len(self.sim.loose_sun),
+            "cooldowns": dict(self.sim.state.cooldowns),
             "snapshot": self.sim.snapshot(),
         }
 

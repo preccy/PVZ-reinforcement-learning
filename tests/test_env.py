@@ -173,3 +173,64 @@ def test_action_mask_disables_all_place_actions_when_unaffordable_or_on_cooldown
     assert not mask[place_start:place_end].any()
     assert bool(mask[0]) is True
     assert bool(mask[1]) == (len(env.sim.loose_sun) > 0)
+
+def test_action_mask_only_noop_when_no_sun_and_no_loose_sun():
+    env = PvZEnv(seed=70)
+    env.reset(seed=70)
+    env.sim.state.sun = 0
+    env.sim.loose_sun.clear()
+    env.sim.state.cooldowns["sunflower"] = 0
+    env.sim.state.cooldowns["peashooter"] = 0
+    env.sim.state.cooldowns["wallnut"] = 0
+
+    mask = env.get_action_mask()
+
+    assert bool(mask[0]) is True
+    assert bool(mask[1]) is False
+    assert int(mask.sum()) == 1
+
+
+def test_action_mask_no_sun_with_loose_sun_allows_collect_only():
+    env = PvZEnv(seed=71)
+    env.reset(seed=71)
+    env.sim.state.sun = 0
+    env.sim.loose_sun = [LooseSun(lane=0, x=1.0, amount=25, ttl=10)]
+    env.sim.state.cooldowns["sunflower"] = 0
+    env.sim.state.cooldowns["peashooter"] = 0
+    env.sim.state.cooldowns["wallnut"] = 0
+
+    mask = env.get_action_mask()
+
+    assert bool(mask[0]) is True
+    assert bool(mask[1]) is True
+    assert int(mask.sum()) == 2
+
+
+def test_action_mask_enables_econ_when_legal_slot_exists():
+    env = PvZEnv(seed=72)
+    env.reset(seed=72)
+    env.sim.loose_sun.clear()
+    env.sim.state.sun = config.PLANTS["sunflower"].cost
+    env.sim.state.cooldowns["sunflower"] = 0
+
+    mask = env.get_action_mask()
+    econ_slice = mask[2 : 2 + config.LANES]
+
+    assert econ_slice.any()
+
+
+def test_action_mask_sunflower_legal_while_peashooter_illegal_by_cost():
+    env = PvZEnv(seed=73)
+    env.reset(seed=73)
+    env.sim.loose_sun.clear()
+    env.sim.state.sun = config.PLANTS["sunflower"].cost + 10
+    env.sim.state.cooldowns["sunflower"] = 0
+    env.sim.state.cooldowns["peashooter"] = 0
+    env.sim.state.cooldowns["wallnut"] = 0
+
+    mask = env.get_action_mask()
+    econ_slice = mask[2 : 2 + config.LANES]
+    defend_slice = mask[2 + config.LANES : 2 + (2 * config.LANES)]
+
+    assert econ_slice.any()
+    assert not defend_slice.any()
