@@ -63,7 +63,7 @@ def test_termination_signals_for_loss_and_win_paths():
     lane = 0
     loss_env.sim.state.mowers[lane] = False
     zcfg = config.ZOMBIES["normal"]
-    loss_env.sim.zombies = [Zombie(kind="normal", lane=lane, x=config.HOUSE_X - 0.01, hp=zcfg.hp)]
+    loss_env.sim.zombies = [Zombie(id=1, kind="normal", lane=lane, x=config.HOUSE_X - 0.01, hp=zcfg.hp)]
     _, _, term, trunc, info = loss_env.step(0)
     assert term is True
     assert trunc is False
@@ -235,3 +235,40 @@ def test_action_mask_sunflower_legal_while_peashooter_illegal_by_cost():
 
     assert econ_slice.any()
     assert not defend_slice.any()
+
+
+def test_peashooter_emits_pea_shot_events():
+    env = PvZEnv(seed=81)
+    env.reset(seed=81)
+    env.sim.state.sun = 999
+    env.sim.state.cooldowns["peashooter"] = 0
+    assert env.sim.place("peashooter", lane=2, col=1)
+
+    zcfg = config.ZOMBIES["normal"]
+    env.sim.zombies.append(Zombie(id=999, kind="normal", lane=2, x=7.5, hp=zcfg.hp))
+
+    saw_event = False
+    for _ in range(8):
+        _, _, _, _, info = env.step(0)
+        events = info.get("events", [])
+        if any(evt.get("type") == "pea_shot" for evt in events):
+            saw_event = True
+            break
+
+    assert saw_event
+
+
+def test_buckethead_spawn_and_hp_higher_than_normal():
+    env = PvZEnv(seed=82, difficulty="hard")
+    env.reset(seed=82)
+
+    assert config.ZOMBIES["buckethead"].hp > config.ZOMBIES["normal"].hp
+
+    saw_buckethead = False
+    for _ in range(config.EPISODE_STEPS):
+        env.step(0)
+        if any(z.kind == "buckethead" for z in env.sim.zombies):
+            saw_buckethead = True
+            break
+
+    assert saw_buckethead

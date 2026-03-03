@@ -12,7 +12,7 @@ Training directly on a real game is brittle (screen scraping, latency, nondeterm
 
 - 5-lane x 9-column PvZ-like simulator
 - Plants: Sunflower, Peashooter, Wall-nut
-- Zombies: Normal + Conehead
+- Zombies: Normal + Conehead + Buckethead
 - Sun economy, cooldowns, sky sun, sunflower sun
 - Mowers per lane (single-use emergency clear)
 - High-level discrete action space for faster PPO learning
@@ -20,6 +20,7 @@ Training directly on a real game is brittle (screen scraping, latency, nondeterm
 - PPO training pipeline with vectorized envs + checkpoints
 - Evaluation modes: PPO, random, scripted baseline
 - Pygame replay viewer for demos
+- Replay-only pea projectile animation synced to sim combat events
 - Basic tests + SB3 env checker
 - Optional curriculum via `--difficulty easy|normal|hard`
 
@@ -127,6 +128,7 @@ Zombie spawning is now driven by a simple timeline:
 - flag-wave spikes occur at 25%, 50%, 75%, and 100% progress
 - a final-wave spike happens near the end
 - conehead share ramps up over time based on difficulty
+- buckethead chance ramps from mid-game to late-game (difficulty-scaled)
 
 Win condition remains surviving `EPISODE_STEPS`; wave completion is tracked in `info["snapshot"]` for debugging.
 
@@ -237,6 +239,7 @@ python replay.py --algo maskable --policy ppo --model models/xxx.zip
 - grid lanes and columns
 - plant circles by type
 - zombies moving right->left
+- replay-only pea projectiles spawned from simulator combat events
 - loose sun orbs
 - HUD: step, sun, action name, reward, mower flags
 
@@ -253,8 +256,10 @@ assets/
   zombies/
     zombie.png
     cone_zombie.png
+    buckethead.png
   ui/
     sun.png   (optional)
+    pea.png   (optional)
 ```
 
 Sprite behavior in replay:
@@ -263,6 +268,7 @@ Sprite behavior in replay:
 - plant sprites are scaled to roughly 90% of tile width/height
 - zombie sprites are scaled by height to roughly 95% of tile height while preserving aspect ratio
 - `sun.png` is optional; missing file falls back to a yellow circle
+- `pea.png` is optional; missing file falls back to a green projectile circle
 - `--sprite-scale` multiplies these default target sizes
 - `--no-sprites` disables PNG loading entirely and forces fallback shapes
 
@@ -297,8 +303,7 @@ Coverage includes reset/step, observation shape/dtype, invalid action handling, 
 ## Known limitations
 
 - Simplified combat and movement timings (not frame-accurate PvZ)
-- Single zombie archetype behaviors (only HP/speed differ)
-- No projectiles rendered separately
+- Zombie archetypes currently differ mostly in stat profiles (hp/speed/dps/reward)
 - Action abstraction hides exact tile-level placement decisions
 
 ## Recommended first experiments

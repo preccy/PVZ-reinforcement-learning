@@ -16,6 +16,8 @@ BOARD_TOP = 110
 BOARD_BOTTOM = 30
 BOARD_LEFT = 70
 BOARD_RIGHT = 70
+PEA_SPEED_WORLD_PER_SEC = 8.0
+SPARKLE_TTL_SEC = 0.08
 
 COLORS = {
     "bg": (34, 120, 45),
@@ -25,10 +27,12 @@ COLORS = {
     "wallnut": (139, 94, 60),
     "normal": (120, 120, 120),
     "conehead": (160, 110, 80),
+    "buckethead": (90, 100, 130),
     "sun": (255, 215, 80),
+    "pea": (80, 230, 80),
+    "sparkle": (250, 250, 250),
     "text": (250, 250, 250),
 }
-
 
 
 def parse_args() -> argparse.Namespace:
@@ -97,13 +101,14 @@ def scale_to_height(surface: pygame.Surface, target_h: int) -> pygame.Surface:
 
 def load_sprites(tile_w: int, tile_h: int, sprite_scale: float, disabled: bool) -> dict[str, Optional[pygame.Surface]]:
     if disabled:
-        return {k: None for k in ["sunflower", "peashooter", "wallnut", "normal", "conehead", "sun"]}
+        return {k: None for k in ["sunflower", "peashooter", "wallnut", "normal", "conehead", "buckethead", "sun", "pea"]}
 
     assets = Path("assets")
     plant_target_w = int(tile_w * 0.9 * sprite_scale)
     plant_target_h = int(tile_h * 0.9 * sprite_scale)
     zombie_target_h = int(tile_h * 0.95 * sprite_scale)
     sun_target = int(min(tile_w, tile_h) * 0.24 * sprite_scale)
+    pea_target = int(min(tile_w, tile_h) * 0.16 * sprite_scale)
 
     sprites: dict[str, Optional[pygame.Surface]] = {
         "sunflower": None,
@@ -111,7 +116,9 @@ def load_sprites(tile_w: int, tile_h: int, sprite_scale: float, disabled: bool) 
         "wallnut": None,
         "normal": None,
         "conehead": None,
+        "buckethead": None,
         "sun": None,
+        "pea": None,
     }
 
     plant_files = {
@@ -122,6 +129,7 @@ def load_sprites(tile_w: int, tile_h: int, sprite_scale: float, disabled: bool) 
     zombie_files = {
         "normal": assets / "zombies" / "zombie.png",
         "conehead": assets / "zombies" / "cone_zombie.png",
+        "buckethead": assets / "zombies" / "buckethead.png",
     }
 
     for name, pth in plant_files.items():
@@ -138,7 +146,40 @@ def load_sprites(tile_w: int, tile_h: int, sprite_scale: float, disabled: bool) 
     if sun_raw is not None:
         sprites["sun"] = scale_surface(sun_raw, sun_target, sun_target)
 
+    pea_raw = safe_load_png(str(assets / "ui" / "pea.png"))
+    if pea_raw is not None:
+        sprites["pea"] = scale_surface(pea_raw, pea_target, pea_target)
+
     return sprites
+
+
+def ingest_projectile_events(events: list[dict], active_projectiles: list[dict]) -> None:
+    born = time.perf_counter()
+    for event in events:
+        if event.get("type") != "pea_shot":
+            continue
+        active_projectiles.append(
+            {
+                "lane": int(event["lane"]),
+                "x_world": float(event["x0"]),
+                "x_target_world": float(event["x1"]),
+                "born_time": born,
+                "speed_world_per_sec": PEA_SPEED_WORLD_PER_SEC,
+            }
+        )
+
+
+def update_projectiles(active_projectiles: list[dict], sparkles: list[dict], dt: float) -> None:
+    for projectile in list(active_projectiles):
+        projectile["x_world"] += projectile["speed_world_per_sec"] * dt
+        if projectile["x_world"] >= projectile["x_target_world"]:
+            active_projectiles.remove(projectile)
+            sparkles.append({"lane": projectile["lane"], "x_world": projectile["x_target_world"], "ttl": SPARKLE_TTL_SEC})
+
+    for sparkle in list(sparkles):
+        sparkle["ttl"] -= dt
+        if sparkle["ttl"] <= 0:
+            sparkles.remove(sparkle)
 
 
 def draw(
@@ -150,6 +191,8 @@ def draw(
     tile_w: int,
     tile_h: int,
     sprites: dict[str, Optional[pygame.Surface]],
+    active_projectiles: list[dict],
+    sparkles: list[dict],
     mask_sum: Optional[int] = None,
     collect_legal: Optional[bool] = None,
 ) -> None:
@@ -176,7 +219,25 @@ def draw(
             rect = sprite.get_rect(midbottom=(x, y + tile_h // 2 - 4))
             screen.blit(sprite, rect)
         else:
-            pygame.draw.rect(screen, COLORS[zombie["kind"]], pygame.Rect(x - 16, y - 24, 28, 48))
+            rect = pygame.Rect(x - 16, y - 24, 28, 48)
+            pygame.draw.rect(screen, COLORS[zombie["kind"]], rect)
+            if zombie["kind"] == "buckethead":
+                pygame.draw.rect(screen, (230, 230, 255), rect, 2)
+                if font is not None:
+                    label = font.render("B", True, (230, 230, 255))
+                    screen.blit(label, (x - 6, y - 18))
+
+    pea_sprite = sprites.get("pea")
+    for projectile in active_projectiles:
+        px, py = world_to_screen(projectile["lane"], projectile["x_world"], tile_w, tile_h)
+        if pea_sprite is not None:
+            screen.blit(pea_sprite, pea_sprite.get_rect(center=(px, py)))
+        else:
+            pygame.draw.circle(screen, COLORS["pea"], (px, py), max(3, int(min(tile_w, tile_h) * 0.06)))
+
+    for sparkle in sparkles:
+        sx, sy = world_to_screen(sparkle["lane"], sparkle["x_world"], tile_w, tile_h)
+        pygame.draw.circle(screen, COLORS["sparkle"], (sx, sy), 3)
 
     for sun in snapshot["loose_sun"]:
         x, y = world_to_screen(sun["lane"], sun["x"] + 0.5, tile_w, tile_h)
@@ -258,6 +319,9 @@ def main() -> None:
     done = False
     last_action = 0
     first_frame_printed = False
+    active_projectiles: list[dict] = []
+    sparkles: list[dict] = []
+    last_time = time.perf_counter()
 
     while not done and info["snapshot"]["step"] < args.max_steps:
         mask_sum = None
@@ -280,8 +344,14 @@ def main() -> None:
             action = int(scripted.predict(obs))
 
         obs, _, term, trunc, info = env.step(action)
+        ingest_projectile_events(info.get("events", []), active_projectiles)
         done = term or trunc
         last_action = action
+
+        now = time.perf_counter()
+        dt = max(0.0, min(0.1, now - last_time))
+        last_time = now
+        update_projectiles(active_projectiles, sparkles, dt)
 
         draw(
             screen,
@@ -292,6 +362,8 @@ def main() -> None:
             tile_w,
             tile_h,
             sprites,
+            active_projectiles,
+            sparkles,
             mask_sum=mask_sum,
             collect_legal=collect_legal,
         )

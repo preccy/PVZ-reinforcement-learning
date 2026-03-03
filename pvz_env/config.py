@@ -50,6 +50,7 @@ class WaveConfig:
     flag_wave_multiplier: float
     final_wave_multiplier: float
     conehead_ramp: float
+    buckethead_ramp: float
 
 
 LANES = 5
@@ -69,6 +70,7 @@ PLANTS = {
 ZOMBIES = {
     "normal": ZombieConfig(hp=120, speed=0.04, dps=14.0, reward_on_kill=1.0),
     "conehead": ZombieConfig(hp=220, speed=0.03, dps=15.0, reward_on_kill=1.5),
+    "buckethead": ZombieConfig(hp=360, speed=0.04, dps=14.0, reward_on_kill=2.0),
 }
 
 WAVES = {
@@ -79,6 +81,7 @@ WAVES = {
         flag_wave_multiplier=2.0,
         final_wave_multiplier=3.0,
         conehead_ramp=0.20,
+        buckethead_ramp=0.12,
     ),
     "normal": WaveConfig(
         sky_sun_interval=20,
@@ -87,6 +90,7 @@ WAVES = {
         flag_wave_multiplier=2.3,
         final_wave_multiplier=3.3,
         conehead_ramp=0.30,
+        buckethead_ramp=0.18,
     ),
     "hard": WaveConfig(
         sky_sun_interval=23,
@@ -95,6 +99,7 @@ WAVES = {
         flag_wave_multiplier=2.7,
         final_wave_multiplier=3.8,
         conehead_ramp=0.42,
+        buckethead_ramp=0.24,
     ),
 }
 
