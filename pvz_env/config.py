@@ -26,14 +26,17 @@ class ZombieConfig:
 class RewardConfig:
     step_survival: float = 0.03
     kill_bonus: float = 0.7
-    sun_collect_bonus: float = 0.04
+    sun_collect_bonus: float = 0.0
+    sun_collect_cap: float = 25.0
     invalid_action_penalty: float = -0.15
     empty_collect_penalty: float = -0.02
     tiny_collect_threshold: int = 25
     tiny_collect_penalty: float = -0.03
     place_any_bonus: float = 0.05
-    place_sunflower_bonus: float = 0.12
+    place_sunflower_bonus: float = 0.10
     place_defender_bonus: float = 0.08
+    sun_hoard_threshold: float = 200.0
+    sun_hoard_penalty: float = -0.001
     mower_consumed_penalty: float = -2.0
     lose_penalty: float = -10.0
     win_bonus: float = 10.0

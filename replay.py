@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--difficulty", choices=["easy", "normal", "hard"], default="normal")
     p.add_argument("--seed", type=int, default=123)
     p.add_argument("--fps", type=int, default=12)
+    p.add_argument("--stochastic", action="store_true", help="sample actions for stochastic policy playback")
     return p.parse_args()
 
 
@@ -61,7 +62,7 @@ def main() -> None:
                 sys.exit(0)
 
         if args.policy == "ppo":
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=not args.stochastic)
             action = int(action)
         elif args.policy == "random":
             action = env.action_space.sample()
