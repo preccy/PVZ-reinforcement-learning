@@ -72,7 +72,7 @@ def main() -> None:
         done = term or trunc
         ep_reward += reward
         last_action = action
-        draw(screen, font, info["snapshot"], last_action, ep_reward)
+        draw(screen, font, info["snapshot"], last_action, ep_reward, info.get("sun_collected", 0))
         pygame.display.flip()
         clock.tick(args.fps)
 
@@ -80,7 +80,14 @@ def main() -> None:
     pygame.quit()
 
 
-def draw(screen: pygame.Surface, font: pygame.font.Font, snapshot: dict, action: int, ep_reward: float) -> None:
+def draw(
+    screen: pygame.Surface,
+    font: pygame.font.Font,
+    snapshot: dict,
+    action: int,
+    ep_reward: float,
+    last_collected: int,
+) -> None:
     screen.fill(COLORS["bg"])
     for lane in range(config.LANES):
         for col in range(config.COLS):
@@ -106,7 +113,8 @@ def draw(screen: pygame.Surface, font: pygame.font.Font, snapshot: dict, action:
 
     text = (
         f"Step={snapshot['step']}  Sun={snapshot['sun']}  Action={ACTION_MEANINGS[action]}  "
-        f"Reward={ep_reward:.2f}  Mowers={snapshot['mowers']}"
+        f"Reward={ep_reward:.2f}  Mowers={snapshot['mowers']}  "
+        f"LooseSun={len(snapshot['loose_sun'])}  LastCollected={last_collected}"
     )
     screen.blit(font.render(text, True, COLORS["text"]), (20, HEIGHT - 40))
 
