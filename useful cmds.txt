@@ -1,0 +1,118 @@
+from pathlib import Path
+
+content = """PVZ Reinforcement Learning — Handy Commands (Windows PowerShell)
+======================================================
+
+Assumptions:
+- You are in the repo root: PVZ-reinforcement-learning
+- Your venv is in .venv
+- You already installed requirements
+- Your scripts are: train.py, eval.py, replay.py
+- You added resume support (--load-model) and stochastic replay (--stochastic)
+
+------------------------------------------------------
+0) Activate venv
+------------------------------------------------------
+cd "C:\\Users\\TomPr\\Desktop\\pvz RL\\PVZ-reinforcement-learning"
+.venv\\Scripts\\Activate.ps1
+
+Quick sanity checks:
+python --version
+python -c "import torch, numpy; print('torch', torch.__version__); print('numpy', numpy.__version__)"
+
+------------------------------------------------------
+1) Run tests (recommended after changes)
+------------------------------------------------------
+python -m pytest -q
+
+------------------------------------------------------
+2) Training — fresh runs
+------------------------------------------------------
+# Quick smoke (fast feedback)
+python train.py --quick --timesteps 50000 --n-envs 8 --run-name quick_smoke
+
+# Medium run
+python train.py --timesteps 300000 --n-envs 12 --run-name ppo_300k
+
+# Heavy run (good “let it cook”)
+python train.py --timesteps 2000000 --n-envs 12 --run-name ppo_2m
+
+# Even heavier (overnight-ish)
+python train.py --timesteps 5000000 --n-envs 12 --run-name ppo_5m
+
+------------------------------------------------------
+3) Training — continue/resume from an existing model
+------------------------------------------------------
+# Continue training from a previous final model
+python train.py --timesteps 1000000 --n-envs 12 --run-name cont_1m --load-model models\\ppo_2m_final.zip
+
+# Continue but reset timestep counter (optional; only if your train.py supports it)
+python train.py --timesteps 1000000 --n-envs 12 --run-name cont_1m_reset --load-model models\\ppo_2m_final.zip --reset-timesteps
+
+------------------------------------------------------
+4) Evaluation (how to know it’s improving)
+------------------------------------------------------
+# Random baseline
+python eval.py --policy random --episodes 30
+
+# Scripted baseline (proves sim mechanics + gives benchmark)
+python eval.py --policy scripted --episodes 30
+
+# Evaluate a trained PPO model (update the filename to your actual model)
+python eval.py --policy ppo --model models\\ppo_2m_final.zip --episodes 30
+
+# Compare earlier vs later checkpoints (if you have them)
+python eval.py --policy ppo --model models\\ppo_500k_checkpoint.zip --episodes 30
+python eval.py --policy ppo --model models\\ppo_2m_final.zip --episodes 30
+
+------------------------------------------------------
+5) Replay / Visualization
+------------------------------------------------------
+# Deterministic replay (always picks top action)
+python replay.py --policy ppo --model models\\ppo_2m_final.zip
+
+# Stochastic replay (samples actions — good when deterministic looks “stuck”)
+python replay.py --policy ppo --model models\\ppo_2m_final.zip --stochastic
+
+# Scripted replay (useful sanity check)
+python replay.py --policy scripted
+
+------------------------------------------------------
+6) TensorBoard (if train.py logs to ./logs)
+------------------------------------------------------
+tensorboard --logdir logs
+
+------------------------------------------------------
+7) Speed tests (quick benchmarks)
+------------------------------------------------------
+# Try different env counts and keep whichever gives best it/s
+python train.py --timesteps 100000 --n-envs 10 --run-name speed_10
+python train.py --timesteps 100000 --n-envs 12 --run-name speed_12
+python train.py --timesteps 100000 --n-envs 16 --run-name speed_16
+
+------------------------------------------------------
+8) OPTIONAL: if you later add performance flags to train.py
+------------------------------------------------------
+If your train.py supports these flags (only use if implemented):
+  --n-steps 1024
+  --batch-size 1024
+  --n-epochs 6
+  --torch-threads 6
+  --torch-interop 2
+
+Example:
+python train.py --timesteps 3000000 --n-envs 12 --n-steps 1024 --batch-size 1024 --n-epochs 6 --torch-threads 6 --torch-interop 2 --run-name fast_quality_3m
+
+------------------------------------------------------
+9) Housekeeping
+------------------------------------------------------
+# Deactivate venv
+deactivate
+
+# List saved models
+dir .\\models
+"""
+
+path = Path("/mnt/data/pvz_commands.txt")
+path.write_text(content, encoding="utf-8")
+str(path)
