@@ -54,8 +54,14 @@ def main() -> None:
         ep_reward = 0.0
         ep_len = 0
         while not done:
+            masks = None
             if args.policy == "ppo":
-                action, _ = model.predict(obs, deterministic=not args.stochastic)
+                if args.algo == "maskable":
+                    base_env = env.unwrapped
+                    masks = base_env.get_action_mask()
+                    action, _ = model.predict(obs, deterministic=not args.stochastic, action_masks=masks)
+                else:
+                    action, _ = model.predict(obs, deterministic=not args.stochastic)
             elif args.policy == "random":
                 action = env.action_space.sample()
             else:
@@ -66,7 +72,13 @@ def main() -> None:
             ep_reward += reward
             ep_len += 1
             if args.render:
-                print(f"a={info['action_name']:>12} r={reward: .3f} | {format_text_snapshot(info['snapshot'])}")
+                render_prefix = (
+                    f"a={info['action_name']:>12} r={reward: .3f} "
+                    f"sun={info['snapshot']['sun']:>3} loose_sun_count={len(info['snapshot']['loose_sun']):>2} "
+                )
+                if masks is not None:
+                    render_prefix += f"mask_sum={int(masks.sum()):>2} "
+                print(f"{render_prefix}| {format_text_snapshot(info['snapshot'])}")
 
         win = info["snapshot"]["win"]
         wins += int(win)
