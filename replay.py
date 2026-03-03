@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Pygame replay of one episode")
     p.add_argument("--model", type=str, default="models/ppo_pvz_final.zip")
     p.add_argument("--policy", choices=["ppo", "random", "scripted"], default="ppo")
+    p.add_argument("--algo", choices=["ppo", "maskable"], default="ppo")
     p.add_argument("--stochastic", action="store_true", help="sample actions for stochastic policy playback")
     p.add_argument("--difficulty", choices=["easy", "normal", "hard"], default="normal")
     p.add_argument("--seed", type=int, default=123)
@@ -215,15 +216,31 @@ def main() -> None:
 
     model = None
     if args.policy == "ppo":
-        from stable_baselines3 import PPO
+        model_path = str(args.model).lower()
+        if args.algo == "ppo" and "maskable" in model_path:
+            print(
+                "Warning: model path contains 'maskable' but --algo is 'ppo'. "
+                "If this is a MaskablePPO checkpoint, use --algo maskable."
+            )
 
-        model = PPO.load(args.model)
+        if args.algo == "maskable":
+            from sb3_contrib import MaskablePPO
+
+            model = MaskablePPO.load(args.model)
+        else:
+            from stable_baselines3 import PPO
+
+            model = PPO.load(args.model)
         print(f"[{time.time():.3f}] model loaded")
 
     draw_loading(screen, font, "Loading replay...", "Preparing env...")
     handle_quit_events()
 
     env = PvZEnv(seed=args.seed, difficulty=args.difficulty)
+    if args.algo == "maskable":
+        from sb3_contrib.common.wrappers import ActionMasker
+
+        env = ActionMasker(env, lambda e: e.get_action_mask())
     obs, info = env.reset(seed=args.seed)
     print(f"[{time.time():.3f}] env reset")
 
