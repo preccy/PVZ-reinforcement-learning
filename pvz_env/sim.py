@@ -3,9 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+import os
+
 import numpy as np
 
 from . import config
+
+
+PEASHOOTER_SHOT_INTERVAL_TICKS = config.seconds_to_ticks(config.PEASHOOTER_SHOT_INTERVAL_SEC)
+CHEW_DAMAGE_PER_TICK = config.CHEW_DPS * config.SIM_DT
+NORMAL_ZOMBIE_SPEED_UNITS_PER_TICK = config.NORMAL_ZOMBIE_TILES_PER_SEC * config.SIM_DT
 
 
 @dataclass
@@ -66,6 +73,14 @@ class PvZSimulator:
         self.wave_completion_step: Optional[int] = None
         self.wave_completion_ratio = 0.0
         self._next_zombie_id = 1
+        if config.DEBUG_DERIVED_VALUES or os.getenv("PVZ_DEBUG_DERIVED_VALUES") == "1":
+            print(
+                "[pvz-sim] derived values: "
+                f"dt={config.SIM_DT}, "
+                f"peashooter_interval_ticks={PEASHOOTER_SHOT_INTERVAL_TICKS}, "
+                f"chew_damage_per_tick={CHEW_DAMAGE_PER_TICK}, "
+                f"zombie_speed_units_per_tick={NORMAL_ZOMBIE_SPEED_UNITS_PER_TICK}"
+            )
 
     def reset(self) -> None:
         self.state = SimState()
@@ -157,8 +172,8 @@ class PvZSimulator:
 
     def _build_wave_schedule(self) -> dict[int, SpawnEvent]:
         schedule: dict[int, SpawnEvent] = {}
-        spacing = 28
-        trickle_start = 12
+        spacing = config.seconds_to_ticks(2.8)
+        trickle_start = config.seconds_to_ticks(1.2)
         for step in range(trickle_start, config.EPISODE_STEPS + 1, spacing):
             progress = min(1.0, step / config.EPISODE_STEPS)
             schedule[step] = SpawnEvent(step=step, multiplier=1.0 + 0.7 * progress)
@@ -182,7 +197,14 @@ class PvZSimulator:
             if len(self.loose_sun) < config.MAX_LOOSE_SUN:
                 lane = int(self.rng.integers(0, config.LANES))
                 x = float(self.rng.uniform(0, config.COLS - 1))
-                self.loose_sun.append(LooseSun(lane=lane, x=x, amount=self.wave_cfg.sky_sun_amount, ttl=55))
+                self.loose_sun.append(
+                    LooseSun(
+                        lane=lane,
+                        x=x,
+                        amount=self.wave_cfg.sky_sun_amount,
+                        ttl=config.seconds_to_ticks(config.SKY_SUN_TTL_SEC),
+                    )
+                )
 
     def _spawn_zombie(self, kind: str, lane: int, x: float) -> None:
         zcfg = config.ZOMBIES[kind]
@@ -250,7 +272,14 @@ class PvZSimulator:
             for z in dead:
                 kills += 1
                 if len(self.loose_sun) < config.MAX_LOOSE_SUN and self.rng.random() < 0.5:
-                    self.loose_sun.append(LooseSun(lane=z.lane, x=max(0.0, z.x), amount=25, ttl=45))
+                    self.loose_sun.append(
+                        LooseSun(
+                            lane=z.lane,
+                            x=max(0.0, z.x),
+                            amount=25,
+                            ttl=config.seconds_to_ticks(config.LOOSE_SUN_DROP_TTL_SEC),
+                        )
+                    )
                 self.zombies.remove(z)
         return kills, events
 
@@ -267,12 +296,12 @@ class PvZSimulator:
                     break
             if plant_target is not None:
                 zcfg = config.ZOMBIES[z.kind]
-                plant_target.hp -= zcfg.dps * 0.1
+                plant_target.hp -= zcfg.dps * config.SIM_DT
                 if plant_target.hp <= 0 and plant_col is not None:
                     self.grid[z.lane][plant_col] = None
             else:
                 zcfg = config.ZOMBIES[z.kind]
-                z.x -= zcfg.speed
+                z.x -= zcfg.speed_tiles_per_sec * config.SIM_DT
 
             if z.x <= 0 and self.state.mowers[z.lane]:
                 self.state.mowers[z.lane] = False
@@ -292,7 +321,14 @@ class PvZSimulator:
                 pcfg = config.PLANTS[plant.kind]
                 if plant.cooldown_tick >= pcfg.sun_interval:
                     if len(self.loose_sun) < config.MAX_LOOSE_SUN:
-                        self.loose_sun.append(LooseSun(lane=lane, x=col, amount=pcfg.sun_amount, ttl=60))
+                        self.loose_sun.append(
+                            LooseSun(
+                                lane=lane,
+                                x=col,
+                                amount=pcfg.sun_amount,
+                                ttl=config.seconds_to_ticks(config.SUNFLOWER_SUN_TTL_SEC),
+                            )
+                        )
                     plant.cooldown_tick = 0
 
     def _tick_loose_sun(self) -> None:

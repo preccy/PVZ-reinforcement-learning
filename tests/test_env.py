@@ -248,7 +248,7 @@ def test_peashooter_emits_pea_shot_events():
     env.sim.zombies.append(Zombie(id=999, kind="normal", lane=2, x=7.5, hp=zcfg.hp))
 
     saw_event = False
-    for _ in range(8):
+    for _ in range(config.PLANTS["peashooter"].attack_interval + 2):
         _, _, _, _, info = env.step(0)
         events = info.get("events", [])
         if any(evt.get("type") == "pea_shot" for evt in events):
@@ -272,3 +272,31 @@ def test_buckethead_spawn_and_hp_higher_than_normal():
             break
 
     assert saw_buckethead
+
+
+def test_pvz_anchor_values_and_tick_conversions():
+    assert config.PLANTS["wallnut"].hp == 4000
+    assert config.PLANTS["peashooter"].attack_damage == 20
+    assert config.ZOMBIES["buckethead"].hp == 1370
+
+    expected_interval = round(1.425 / config.SIM_DT)
+    assert config.PLANTS["peashooter"].attack_interval == expected_interval
+
+
+def test_zombie_chew_damage_scales_with_dt():
+    env = PvZEnv(seed=91)
+    env.reset(seed=91)
+
+    env.sim.grid[0][0] = None
+    env.sim.state.sun = 999
+    env.sim.state.cooldowns["wallnut"] = 0
+    assert env.sim.place("wallnut", lane=0, col=0)
+
+    zcfg = config.ZOMBIES["normal"]
+    env.sim.zombies.append(Zombie(id=1234, kind="normal", lane=0, x=0.2, hp=zcfg.hp))
+
+    before_hp = env.sim.grid[0][0].hp
+    env.step(0)
+    after_hp = env.sim.grid[0][0].hp
+
+    assert before_hp - after_hp == pytest.approx(100.0 * config.SIM_DT)

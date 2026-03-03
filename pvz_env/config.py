@@ -3,6 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+SIM_DT = 0.1
+DEBUG_DERIVED_VALUES = False
+
+
+def seconds_to_ticks(seconds: float) -> int:
+    return max(1, int(round(seconds / SIM_DT)))
+
+
 @dataclass(frozen=True)
 class PlantConfig:
     cost: int
@@ -17,7 +25,7 @@ class PlantConfig:
 @dataclass(frozen=True)
 class ZombieConfig:
     hp: float
-    speed: float
+    speed_tiles_per_sec: float
     dps: float
     reward_on_kill: float
 
@@ -58,24 +66,57 @@ COLS = 9
 HOUSE_X = -0.2
 INITIAL_SUN = 150
 MAX_SUN = 500
-EPISODE_STEPS = 900
+EPISODE_DURATION_SEC = 90.0
+EPISODE_STEPS = seconds_to_ticks(EPISODE_DURATION_SEC)
 MAX_LOOSE_SUN = 8
 
+SUNFLOWER_COOLDOWN_SEC = 2.0
+PEASHOOTER_COOLDOWN_SEC = 1.5
+WALLNUT_COOLDOWN_SEC = 2.5
+SUNFLOWER_SUN_INTERVAL_SEC = 2.5
+PEASHOOTER_SHOT_INTERVAL_SEC = 1.425
+
+NORMAL_ZOMBIE_TILES_PER_SEC = 0.4
+CONEHEAD_ZOMBIE_TILES_PER_SEC = 0.3
+BUCKETHEAD_ZOMBIE_TILES_PER_SEC = 0.4
+
+CHEW_DPS = 100.0
+PEA_DAMAGE = 20.0
+WALLNUT_HP = 4000.0
+BUCKETHEAD_HP = 1370.0
+PEA_TILES_PER_SEC = 2.8
+
+LOOSE_SUN_DROP_TTL_SEC = 4.5
+SUNFLOWER_SUN_TTL_SEC = 6.0
+SKY_SUN_TTL_SEC = 5.5
+
 PLANTS = {
-    "sunflower": PlantConfig(cost=50, hp=60, cooldown=20, sun_interval=25, sun_amount=25),
-    "peashooter": PlantConfig(cost=100, hp=80, cooldown=15, attack_damage=20, attack_interval=5),
-    "wallnut": PlantConfig(cost=75, hp=300, cooldown=25),
+    "sunflower": PlantConfig(
+        cost=50,
+        hp=60,
+        cooldown=seconds_to_ticks(SUNFLOWER_COOLDOWN_SEC),
+        sun_interval=seconds_to_ticks(SUNFLOWER_SUN_INTERVAL_SEC),
+        sun_amount=25,
+    ),
+    "peashooter": PlantConfig(
+        cost=100,
+        hp=80,
+        cooldown=seconds_to_ticks(PEASHOOTER_COOLDOWN_SEC),
+        attack_damage=PEA_DAMAGE,
+        attack_interval=seconds_to_ticks(PEASHOOTER_SHOT_INTERVAL_SEC),
+    ),
+    "wallnut": PlantConfig(cost=75, hp=WALLNUT_HP, cooldown=seconds_to_ticks(WALLNUT_COOLDOWN_SEC)),
 }
 
 ZOMBIES = {
-    "normal": ZombieConfig(hp=120, speed=0.04, dps=14.0, reward_on_kill=1.0),
-    "conehead": ZombieConfig(hp=220, speed=0.03, dps=15.0, reward_on_kill=1.5),
-    "buckethead": ZombieConfig(hp=360, speed=0.04, dps=14.0, reward_on_kill=2.0),
+    "normal": ZombieConfig(hp=120, speed_tiles_per_sec=NORMAL_ZOMBIE_TILES_PER_SEC, dps=CHEW_DPS, reward_on_kill=1.0),
+    "conehead": ZombieConfig(hp=220, speed_tiles_per_sec=CONEHEAD_ZOMBIE_TILES_PER_SEC, dps=CHEW_DPS, reward_on_kill=1.5),
+    "buckethead": ZombieConfig(hp=BUCKETHEAD_HP, speed_tiles_per_sec=BUCKETHEAD_ZOMBIE_TILES_PER_SEC, dps=CHEW_DPS, reward_on_kill=2.0),
 }
 
 WAVES = {
     "easy": WaveConfig(
-        sky_sun_interval=18,
+        sky_sun_interval=seconds_to_ticks(1.8),
         sky_sun_amount=25,
         base_trickle_rate=0.10,
         flag_wave_multiplier=2.0,
@@ -84,7 +125,7 @@ WAVES = {
         buckethead_ramp=0.12,
     ),
     "normal": WaveConfig(
-        sky_sun_interval=20,
+        sky_sun_interval=seconds_to_ticks(2.0),
         sky_sun_amount=25,
         base_trickle_rate=0.13,
         flag_wave_multiplier=2.3,
@@ -93,7 +134,7 @@ WAVES = {
         buckethead_ramp=0.18,
     ),
     "hard": WaveConfig(
-        sky_sun_interval=23,
+        sky_sun_interval=seconds_to_ticks(2.3),
         sky_sun_amount=25,
         base_trickle_rate=0.16,
         flag_wave_multiplier=2.7,
