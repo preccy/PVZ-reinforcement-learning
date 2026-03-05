@@ -118,8 +118,8 @@ WAVES = {
     "easy": WaveConfig(
         sky_sun_interval=seconds_to_ticks(1.8),
         sky_sun_amount=25,
-        base_trickle_rate=0.10,
-        flag_wave_multiplier=2.0,
+        base_trickle_rate=0.05,
+        flag_wave_multiplier=1.5,
         final_wave_multiplier=3.0,
         conehead_ramp=0.20,
         buckethead_ramp=0.12,
@@ -127,8 +127,8 @@ WAVES = {
     "normal": WaveConfig(
         sky_sun_interval=seconds_to_ticks(2.0),
         sky_sun_amount=25,
-        base_trickle_rate=0.13,
-        flag_wave_multiplier=2.3,
+        base_trickle_rate=0.07,
+        flag_wave_multiplier=1.8,
         final_wave_multiplier=3.3,
         conehead_ramp=0.30,
         buckethead_ramp=0.18,
@@ -136,8 +136,8 @@ WAVES = {
     "hard": WaveConfig(
         sky_sun_interval=seconds_to_ticks(2.3),
         sky_sun_amount=25,
-        base_trickle_rate=0.16,
-        flag_wave_multiplier=2.7,
+        base_trickle_rate=0.1,
+        flag_wave_multiplier=2.0,
         final_wave_multiplier=3.8,
         conehead_ramp=0.42,
         buckethead_ramp=0.24,

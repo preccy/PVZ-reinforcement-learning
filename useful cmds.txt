@@ -116,3 +116,150 @@ dir .\\models
 path = Path("/mnt/data/pvz_commands.txt")
 path.write_text(content, encoding="utf-8")
 str(path)
+
+
+from pathlib import Path
+
+content = """PVZ Reinforcement Learning — Handy Commands (Updated)
+==================================================
+
+Assumptions:
+- You run commands from the repo root.
+- You are in the venv (PowerShell):  .venv\\Scripts\\Activate.ps1
+- MaskablePPO inference now passes action_masks into model.predict() (so deterministic works).
+
+--------------------------------------------------
+0) Setup / sanity
+--------------------------------------------------
+
+# Activate venv (PowerShell)
+.\\.venv\\Scripts\\Activate.ps1
+
+# Confirm python + packages
+python --version
+python -m pip show stable-baselines3 sb3-contrib pygame
+
+# Show available flags on each script
+python train.py --help
+python eval.py --help
+python replay.py --help
+
+--------------------------------------------------
+1) Training
+--------------------------------------------------
+
+A) Train a NEW masked model (fresh start)
+python train.py --masking --timesteps 3000000 --n-envs 12 --run-name maskable_fresh_3m
+
+# Heavier run
+python train.py --masking --timesteps 5000000 --n-envs 12 --run-name maskable_fresh_5m
+
+B) Continue training / resume from an existing model
+python train.py --masking --timesteps 2000000 --n-envs 12 --run-name cont_2m --load-model models\\YOUR_MODEL.zip
+
+C) “Greedy fine-tune” (make deterministic more decisive)
+# Lower entropy -> more confident / less waffling
+python train.py --masking --timesteps 1500000 --n-envs 12 --run-name greedy_finetune --load-model models\\YOUR_MODEL.zip --ent-coef 0.002
+
+D) CPU throughput tuning ideas (if your train.py supports these flags)
+# More envs usually increases throughput until CPU saturates
+python train.py --masking --timesteps 3000000 --n-envs 16 --run-name speed_env16
+
+# Tune PPO rollout/batch (ONLY if your train.py has these args)
+python train.py --masking --timesteps 3000000 --n-envs 12 --n-steps 256 --batch-size 1024 --n-epochs 4 --run-name tune_rollout
+
+--------------------------------------------------
+2) Evaluation (check if it’s actually getting better)
+--------------------------------------------------
+
+A) Deterministic evaluation (best for “will it play clean?”)
+python eval.py --algo maskable --policy ppo --model models\\YOUR_MODEL.zip --episodes 200
+
+B) Stochastic evaluation (best for “raw capability / exploration”)
+python eval.py --algo maskable --policy ppo --model models\\YOUR_MODEL.zip --episodes 200 --stochastic
+
+C) Debug single episode with step-by-step prints (plants, sun, masks, etc.)
+python eval.py --algo maskable --policy ppo --model models\\YOUR_MODEL.zip --episodes 1 --render
+python eval.py --algo maskable --policy ppo --model models\\YOUR_MODEL.zip --episodes 1 --render --stochastic
+
+D) Scripted baseline (proves sim is behaving)
+python eval.py --policy scripted --episodes 10
+python eval.py --policy scripted --episodes 1 --render
+
+--------------------------------------------------
+3) Replay / Visuals (pygame)
+--------------------------------------------------
+
+A) Replay a trained MASKED model (deterministic)
+python replay.py --algo maskable --policy ppo --model models\\YOUR_MODEL.zip
+
+B) Replay stochastic (samples actions; useful if deterministic looks too “safe”)
+python replay.py --algo maskable --policy ppo --model models\\YOUR_MODEL.zip --stochastic
+
+C) Replay scripted baseline (visual sanity)
+python replay.py --policy scripted
+
+D) Replay performance / feel
+python replay.py --policy scripted --fps 60 --max-steps 400
+python replay.py --algo maskable --policy ppo --model models\\YOUR_MODEL.zip --fps 60 --max-steps 600
+
+--------------------------------------------------
+4) Model file tips
+--------------------------------------------------
+
+# After training, you’ll typically have:
+# - checkpoints: models\\<run_name>_step_<N>.zip  (if enabled)
+# - final:       models\\<run_name>_final.zip
+
+# Continue training the SAME model (recommended workflow):
+python train.py --masking --timesteps 2000000 --n-envs 12 --run-name cont_more --load-model models\\<run_name>_final.zip
+
+--------------------------------------------------
+5) Sprites / Assets (optional, for nicer replay)
+--------------------------------------------------
+
+Place your PNGs here (example layout):
+assets\\plants\\sunflower.png
+assets\\plants\\peashooter.png
+assets\\plants\\wallnut.png
+assets\\zombies\\zombie.png
+assets\\zombies\\cone_zombie.png
+assets\\zombies\\buckethead.png        (if you added buckethead)
+assets\\ui\\sun.png                    (optional)
+assets\\ui\\pea.png                    (optional projectile sprite)
+
+If sprites are missing, replay should fall back to simple shapes.
+
+--------------------------------------------------
+6) Quick troubleshooting
+--------------------------------------------------
+
+- If deterministic looks “dead” but stochastic plays:
+  -> reduce entropy and continue training (see Greedy fine-tune command above)
+
+- If masked models ever appear to pick illegal actions:
+  -> confirm eval/replay passes action_masks to model.predict()
+
+- If replay takes ages to open:
+  -> replay should create the pygame window first, then load model/env; if not, update replay startup.
+
+--------------------------------------------------
+7) “One-liners” you’ll actually use a lot
+--------------------------------------------------
+
+# Train a lot:
+python train.py --masking --timesteps 5000000 --n-envs 12 --run-name big_run_5m
+
+# Resume:
+python train.py --masking --timesteps 3000000 --n-envs 12 --run-name resume_3m --load-model models\\big_run_5m_final.zip
+
+# Evaluate:
+python eval.py --algo maskable --policy ppo --model models\\big_run_5m_final.zip --episodes 200
+
+# Watch it:
+python replay.py --algo maskable --policy ppo --model models\\big_run_5m_final.zip --fps 60
+"""
+
+path = Path("/mnt/data/pvz_commands_updated.txt")
+path.write_text(content, encoding="utf-8")
+str(path)
